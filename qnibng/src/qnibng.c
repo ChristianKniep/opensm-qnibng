@@ -132,23 +132,7 @@ static void destroy(void *_log)
  */
 static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
 {
-	/* create global socket */
 	/*
-	struct sockaddr_in si_other;
-	int s, i, slen=sizeof(si_other);
-	char buf[BUFLEN];
-	if ((s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1)
-		fprintf(log->log_file, "socket creation failed\n");
-	memset((char *) &si_other, 0, sizeof(si_other));
-	si_other.sin_family = AF_INET;
-	si_other.sin_port = htons(PORT);
-	if (inet_aton(SRV_IP, &si_other.sin_addr)==0) {
-		fprintf(log->log_file,
-			"err_cnt: inet_aton() failed %d\n",
-			si_other.sin_port);
-		perror("handle_port_counter");
-	}
-	
 	if (pc->symbol_err_cnt > 0
 	    || pc->link_err_recover > 0
 	    || pc->link_downed > 0
@@ -165,26 +149,59 @@ static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
 			" (%s) port %d\n", pc->port_id.node_guid,
 			pc->port_id.node_name, pc->port_id.port_num);
 	}
-	
-	sprintf(buf, 
-		"ib.%d.%d.err.xmit_discards %d %d\n",
-		pc->port_id.node_guid,
-		pc->port_id.port_num,
-		pc->xmit_discards,
-		time(NULL));
-	fprintf(log->log_file, buf);
-	if (sendto(s, buf, BUFLEN, 0, &si_other, slen)==-1)
-		fprintf(log->log_file, "sending buffer to graphite failed\n");
-	sprintf(buf, 
-		"ib.%d.%d.err.rcv_switch_relay_err %d %d\n",
-		pc->port_id.node_guid,
-		pc->port_id.port_num,
-		pc->rcv_switch_relay_err,
-		time(NULL));
+	*/
+	/* create global socket */
+	struct sockaddr_in si_other;
+	int s, i, slen=sizeof(si_other);
+	char buf[BUFLEN];
+	if ((s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1)
+		fprintf(log->log_file, "socket creation failed\n");
+	memset((char *) &si_other, 0, sizeof(si_other));
+	si_other.sin_family = AF_INET;
+	si_other.sin_port = htons(PORT);
+	if (inet_aton(SRV_IP, &si_other.sin_addr)==0) {
+		fprintf(log->log_file, "perf_cnt: inet_aton() failed\n");
+		/*exit(1);*/
+	}
+	int b,e;
+	char *hostname = regexp(pc->port_id.node_name,"[a-z]+[0-9]+",&b,&e);
+	sprintf(buf, "ib.%s.%d.err.link_err_recover %d %d\n",
+		hostname, pc->port_id.port_num,
+		pc->link_err_recover, time(NULL));
+	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.link_downed %d %d\n",
+		hostname, pc->port_id.port_num,
+		pc->link_downed, time(NULL));
+	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.rcv_err %d %d\n",
+		hostname, pc->port_id.port_num,
+		pc->rcv_err, time(NULL));
+	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.rcv_rem_phys_err %d %d\n",
+		hostname, pc->port_id.port_num,
+		pc->rcv_rem_phys_err, time(NULL));
+	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.rcv_switch_relay_err %d %d\n",
+		hostname, pc->port_id.port_num,
+		pc->rcv_switch_relay_err, time(NULL));
+	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.xmit_discards %d %d\n",
+		hostname, pc->port_id.port_num,
+		pc->xmit_discards, time(NULL));
+	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.xmit_constraint_err %d %d\n",
+		hostname, pc->port_id.port_num,
+		pc->xmit_constraint_err, time(NULL));
+	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.rcv_constraint_err %d %d\n",
+		hostname, pc->port_id.port_num,
+		pc->rcv_constraint_err, time(NULL));
+	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.link_integrity %d %d\n",
+		hostname, pc->port_id.port_num,
+		pc->link_integrity, time(NULL));
+	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.buffer_overrun %d %d\n",
+		hostname, pc->port_id.port_num,
+		pc->buffer_overrun, time(NULL));
+	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.vl15_dropped %d %d\n",
+		hostname, pc->port_id.port_num,
+		pc->vl15_dropped, time(NULL));
 	fprintf(log->log_file, buf);
 	if (sendto(s, buf, BUFLEN, 0, &si_other, slen)==-1)
 		fprintf(log->log_file, "sending 2nd buffer to graphite failed\n");
-	*/
+	shutdown(s, 0);
 }
 
 /** =========================================================================
@@ -213,7 +230,7 @@ static void handle_port_counter_ext(_log_events_t * log, osm_epi_dc_event_t * ep
 		epc->rcv_data,
 		time(NULL));
 	sprintf(&buf[strlen(buf)], 
-		"ibs.%s.%d.perf.xmit_data %d %d\n\0",
+		"ib.%s.%d.perf.xmit_data %d %d\n\0",
 		hostname,
 		epc->port_id.port_num,
 		epc->xmit_data,
