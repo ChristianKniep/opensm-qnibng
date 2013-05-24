@@ -55,6 +55,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
+/* regex */
+#include <regex.h>
+
 
 /** =========================================================================
  * This is a simple example plugin which logs some of the events the OSM
@@ -71,6 +74,29 @@ typedef struct _log_events {
 	osm_log_t *osmlog;
 } _log_events_t;
 
+/**** Regex Function
+ * Might be to heavy for this function, due to the hight frequency
+ * but for starters
+ */
+char *regexp (char *string, char *patrn, int *begin, int *end) {    
+        int i, w=0, len;                 
+        char *word = NULL;
+        regex_t rgT;
+        regmatch_t match;
+        regcomp(&rgT,patrn,REG_EXTENDED);
+        if ((regexec(&rgT,string,1,&match,0)) == 0) {
+                *begin = (int)match.rm_so;
+                *end = (int)match.rm_eo;
+                len = *end-*begin;
+                word=malloc(len+1);
+                for (i=*begin; i<*end; i++) {
+                        word[w] = string[i];
+                        w++; }
+                word[w]=0;
+        }
+        regfree(&rgT);
+        return word;
+}
 /** =========================================================================
  */
 static void *construct(osm_opensm_t *osm)
@@ -178,15 +204,17 @@ static void handle_port_counter_ext(_log_events_t * log, osm_epi_dc_event_t * ep
 		fprintf(log->log_file, "perf_cnt: inet_aton() failed\n");
 		/*exit(1);*/
 	}
+	int b,e;
+	char *hostname = regexp(epc->port_id.node_name,"[a-z]+[0-9]+",&b,&e);
 	sprintf(buf, 
-		"ib.%d.%d.perf.rcv_data %d %d\0",
-		epc->port_id.node_guid,
+		"ib.%s.%d.perf.rcv_data %d %d\n\0",
+		hostname,
 		epc->port_id.port_num,
 		epc->rcv_data,
 		time(NULL));
 	sprintf(&buf[strlen(buf)], 
-		"\nib.%d.%d.perf.xmit_data %d %d\n\0",
-		epc->port_id.node_guid,
+		"ibs.%s.%d.perf.xmit_data %d %d\n\0",
+		hostname,
 		epc->port_id.port_num,
 		epc->xmit_data,
 		time(NULL));
