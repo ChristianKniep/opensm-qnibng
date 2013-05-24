@@ -35,7 +35,7 @@
 #if HAVE_CONFIG_H
 #  include <config.h>
 #endif				/* HAVE_CONFIG_H */
-
+#include <netdb.h>
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
@@ -65,9 +65,9 @@
  */
 #define SAMPLE_PLUGIN_OUTPUT_FILE "/tmp/osm_sample_event_plugin_output"
 /* define address and port of graphite aggregator */
-#define SRV_IP "127.0.0.1"
+#define SERVER "127.0.0.1"
 #define PORT 2003
-#define BUFLEN 512
+#define BufferLength 512
 
 typedef struct _log_events {
 	FILE *log_file;
@@ -132,114 +132,137 @@ static void destroy(void *_log)
  */
 static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
 {
-	/*
-	if (pc->symbol_err_cnt > 0
-	    || pc->link_err_recover > 0
-	    || pc->link_downed > 0
-	    || pc->rcv_err > 0
-	    || pc->rcv_rem_phys_err > 0
-	    || pc->rcv_switch_relay_err > 0
-	    || pc->xmit_discards > 0
-	    || pc->xmit_constraint_err > 0
-	    || pc->rcv_constraint_err > 0
-	    || pc->link_integrity > 0
-	    || pc->buffer_overrun > 0 || pc->vl15_dropped > 0) {
-		fprintf(log->log_file,
-			"Port counter errors for node 0x%" PRIx64
-			" (%s) port %d\n", pc->port_id.node_guid,
-			pc->port_id.node_name, pc->port_id.port_num);
-	}
-	*/
-	/* create global socket */
-	struct sockaddr_in si_other;
-	int s, i, slen=sizeof(si_other);
-	char buf[BUFLEN];
-	if ((s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1)
-		fprintf(log->log_file, "socket creation failed\n");
-	memset((char *) &si_other, 0, sizeof(si_other));
-	si_other.sin_family = AF_INET;
-	si_other.sin_port = htons(PORT);
-	if (inet_aton(SRV_IP, &si_other.sin_addr)==0) {
-		fprintf(log->log_file, "perf_cnt: inet_aton() failed\n");
-		/*exit(1);*/
-	}
-	int b,e;
-	char *hostname = regexp(pc->port_id.node_name,"[a-z]+[0-9]+",&b,&e);
-	sprintf(buf, "ib.%s.%d.err.link_err_recover %d %d\n",
-		hostname, pc->port_id.port_num,
-		pc->link_err_recover, time(NULL));
-	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.link_downed %d %d\n",
-		hostname, pc->port_id.port_num,
-		pc->link_downed, time(NULL));
-	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.rcv_err %d %d\n",
-		hostname, pc->port_id.port_num,
-		pc->rcv_err, time(NULL));
-	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.rcv_rem_phys_err %d %d\n",
-		hostname, pc->port_id.port_num,
-		pc->rcv_rem_phys_err, time(NULL));
-	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.rcv_switch_relay_err %d %d\n",
-		hostname, pc->port_id.port_num,
-		pc->rcv_switch_relay_err, time(NULL));
-	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.xmit_discards %d %d\n",
-		hostname, pc->port_id.port_num,
-		pc->xmit_discards, time(NULL));
-	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.xmit_constraint_err %d %d\n",
-		hostname, pc->port_id.port_num,
-		pc->xmit_constraint_err, time(NULL));
-	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.rcv_constraint_err %d %d\n",
-		hostname, pc->port_id.port_num,
-		pc->rcv_constraint_err, time(NULL));
-	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.link_integrity %d %d\n",
-		hostname, pc->port_id.port_num,
-		pc->link_integrity, time(NULL));
-	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.buffer_overrun %d %d\n",
-		hostname, pc->port_id.port_num,
-		pc->buffer_overrun, time(NULL));
-	sprintf(&buf[strlen(buf)], "ib.%s.%d.err.vl15_dropped %d %d\n",
-		hostname, pc->port_id.port_num,
-		pc->vl15_dropped, time(NULL));
-	fprintf(log->log_file, buf);
-	if (sendto(s, buf, BUFLEN, 0, &si_other, slen)==-1)
-		fprintf(log->log_file, "sending 2nd buffer to graphite failed\n");
-	shutdown(s, 0);
+    /* Variable and structure definitions. */
+    int sd, rc, length = sizeof(int);
+    struct sockaddr_in serveraddr;
+    char buffer[BufferLength];
+    char server[255];
+    char temp;
+    int totalcnt = 0;
+    struct hostent *hostp;
+    char data[100];
+    sprintf(data, "test.test %d %d\n", time(NULL), time(NULL));
+     
+    /* The socket() function returns a socket */
+    /* descriptor representing an endpoint. */
+    /* The statement also identifies that the */
+    /* INET (Internet Protocol) address family */
+    /* with the TCP transport (SOCK_STREAM) */
+    /* will be used for this socket. */
+    /******************************************/
+    /* get a socket descriptor */
+    if((sd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+	perror("Client-socket() error");
+	exit(-1);
+    } 
+    /*Use the default server name or IP*/
+    strcpy(server, SERVER);
+     
+    memset(&serveraddr, 0x00, sizeof(struct sockaddr_in));
+    serveraddr.sin_family = AF_INET;
+    serveraddr.sin_port = htons(PORT);
+     
+    if((serveraddr.sin_addr.s_addr = inet_addr(server)) == (unsigned long)INADDR_NONE) {
+        /* When passing the host name of the server as a */
+        /* parameter to this program, use the gethostbyname() */
+        /* function to retrieve the address of the host server. */
+        /***************************************************/
+        /* get host address */
+        hostp = gethostbyname(server);
+        if(hostp == (struct hostent *)NULL) {
+            printf("HOST NOT FOUND --> ");
+            /* h_errno is usually defined */
+            /* in netdb.h */
+            printf("h_errno = %d\n",h_errno);
+            close(sd);
+            exit(-1);
+        }
+        memcpy(&serveraddr.sin_addr, hostp->h_addr, sizeof(serveraddr.sin_addr));
+    }
+     
+    /* After the socket descriptor is received, the */
+    /* connect() function is used to establish a */
+    /* connection to the server. */
+    /***********************************************/
+    /* connect() to server. */
+    if((rc = connect(sd, (struct sockaddr *)&serveraddr, sizeof(serveraddr))) < 0) {
+        perror("Client-connect() error");
+        close(sd);
+        exit(-1);
+    }
+    int b,e;
+    char *hostname = regexp(pc->port_id.node_name,"[a-z]+[0-9]+",&b,&e);
+    char buf[BufferLength];
+    sprintf(buf, "ib.%s.%d.err.link_err_recover %d %d\n",
+	    hostname, pc->port_id.port_num,
+	    pc->link_err_recover, time(NULL));
+    sprintf(&buf[strlen(buf)], "ib.%s.%d.err.link_downed %d %d\n",
+	    hostname, pc->port_id.port_num,
+	    pc->link_downed, time(NULL));
+    sprintf(&buf[strlen(buf)], "ib.%s.%d.err.rcv_err %d %d\n",
+	    hostname, pc->port_id.port_num,
+	    pc->rcv_err, time(NULL));
+    sprintf(&buf[strlen(buf)], "ib.%s.%d.err.rcv_rem_phys_err %d %d\n",
+	    hostname, pc->port_id.port_num,
+	    pc->rcv_rem_phys_err, time(NULL));
+    sprintf(&buf[strlen(buf)], "ib.%s.%d.err.rcv_switch_relay_err %d %d\n",
+	    hostname, pc->port_id.port_num,
+	    pc->rcv_switch_relay_err, time(NULL));
+    sprintf(&buf[strlen(buf)], "ib.%s.%d.err.xmit_discards %d %d\n",
+	    hostname, pc->port_id.port_num,
+	    pc->xmit_discards, time(NULL));
+    sprintf(&buf[strlen(buf)], "ib.%s.%d.err.xmit_constraint_err %d %d\n",
+	    hostname, pc->port_id.port_num,
+	    pc->xmit_constraint_err, time(NULL));
+    sprintf(&buf[strlen(buf)], "ib.%s.%d.err.rcv_constraint_err %d %d\n",
+	    hostname, pc->port_id.port_num,
+	    pc->rcv_constraint_err, time(NULL));
+    sprintf(&buf[strlen(buf)], "ib.%s.%d.err.link_integrity %d %d\n",
+	    hostname, pc->port_id.port_num,
+	    pc->link_integrity, time(NULL));
+    sprintf(&buf[strlen(buf)], "ib.%s.%d.err.buffer_overrun %d %d\n",
+	    hostname, pc->port_id.port_num,
+	    pc->buffer_overrun, time(NULL));
+    sprintf(&buf[strlen(buf)], "ib.%s.%d.err.vl15_dropped %d %d\n",
+	    hostname, pc->port_id.port_num,
+	    pc->vl15_dropped, time(NULL));
+    /*
+    fprintf(log->log_file, buf);
+    */
+    rc = write(sd, buf, sizeof(buf));
+    if(rc < 0) {
+        perror("Client-write() error");
+        rc = getsockopt(sd, SOL_SOCKET, SO_ERROR, &temp, &length);
+        if(rc == 0) {
+            /* Print out the asynchronously received error. */
+            errno = temp;
+            perror("SO_ERROR was");
+        }
+        close(sd);
+        exit(-1);
+    } 
+    close(sd);
 }
 
 /** =========================================================================
  */
 static void handle_port_counter_ext(_log_events_t * log, osm_epi_dc_event_t * epc)
 {
-	/* create global socket */
-	struct sockaddr_in si_other;
-	int s, i, slen=sizeof(si_other);
-	char buf[BUFLEN];
-	if ((s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1)
-		fprintf(log->log_file, "socket creation failed\n");
-	memset((char *) &si_other, 0, sizeof(si_other));
-	si_other.sin_family = AF_INET;
-	si_other.sin_port = htons(PORT);
-	if (inet_aton(SRV_IP, &si_other.sin_addr)==0) {
-		fprintf(log->log_file, "perf_cnt: inet_aton() failed\n");
-		/*exit(1);*/
-	}
-	int b,e;
-	char *hostname = regexp(epc->port_id.node_name,"[a-z]+[0-9]+",&b,&e);
-	sprintf(buf, 
-		"ib.%s.%d.perf.rcv_data %d %d\n\0",
-		hostname,
-		epc->port_id.port_num,
-		epc->rcv_data,
-		time(NULL));
-	sprintf(&buf[strlen(buf)], 
-		"ib.%s.%d.perf.xmit_data %d %d\n\0",
-		hostname,
-		epc->port_id.port_num,
-		epc->xmit_data,
-		time(NULL));
-	fprintf(log->log_file, buf);
-	/* sending buffer to graphite */
-	if (sendto(s, buf, strlen(buf), 0, &si_other, slen)==-1)
-		fprintf(log->log_file, "sending buffer to graphite failed\n");
-	shutdown(s, 0);
+    int b,e;
+    char *hostname = regexp(epc->port_id.node_name,"[a-z]+[0-9]+",&b,&e);
+    char buf[BufferLength];
+    sprintf(buf, 
+	    "ib.%s.%d.perf.rcv_data %d %d\n\0",
+	    hostname,
+	    epc->port_id.port_num,
+	    epc->rcv_data,
+	    time(NULL));
+    sprintf(&buf[strlen(buf)], 
+	    "ib.%s.%d.perf.xmit_data %d %d\n\0",
+	    hostname,
+	    epc->port_id.port_num,
+	    epc->xmit_data,
+	    time(NULL));
 
 }
 
