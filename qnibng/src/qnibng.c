@@ -97,6 +97,7 @@ char *regexp (char *string, char *patrn, int *begin, int *end) {
         regfree(&rgT);
         return word;
 }
+
 /** =========================================================================
  */
 static void *construct(osm_opensm_t *osm)
@@ -135,40 +136,26 @@ static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
     /* Variable and structure definitions. */
     int sd, rc, length = sizeof(int);
     struct sockaddr_in serveraddr;
-    char buffer[BufferLength];
     char server[255];
     char temp;
-    int totalcnt = 0;
     struct hostent *hostp;
-    char data[100];
-    sprintf(data, "test.test %d %d\n", time(NULL), time(NULL));
-     
-    /* The socket() function returns a socket */
-    /* descriptor representing an endpoint. */
-    /* The statement also identifies that the */
-    /* INET (Internet Protocol) address family */
-    /* with the TCP transport (SOCK_STREAM) */
-    /* will be used for this socket. */
-    /******************************************/
     /* get a socket descriptor */
     if((sd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
 	perror("Client-socket() error");
 	exit(-1);
     } 
-    /*Use the default server name or IP*/
-    strcpy(server, SERVER);
      
     memset(&serveraddr, 0x00, sizeof(struct sockaddr_in));
     serveraddr.sin_family = AF_INET;
     serveraddr.sin_port = htons(PORT);
      
-    if((serveraddr.sin_addr.s_addr = inet_addr(server)) == (unsigned long)INADDR_NONE) {
+    if((serveraddr.sin_addr.s_addr = inet_addr(SERVER)) == (unsigned long)INADDR_NONE) {
         /* When passing the host name of the server as a */
         /* parameter to this program, use the gethostbyname() */
         /* function to retrieve the address of the host server. */
         /***************************************************/
         /* get host address */
-        hostp = gethostbyname(server);
+        hostp = gethostbyname(SERVER);
         if(hostp == (struct hostent *)NULL) {
             printf("HOST NOT FOUND --> ");
             /* h_errno is usually defined */
