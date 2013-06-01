@@ -34,7 +34,8 @@
 
 #if HAVE_CONFIG_H
 #  include <config.h>
-#endif				/* HAVE_CONFIG_H */
+#endif
+/* HAVE_CONFIG_H */
 #include <netdb.h>
 #include <errno.h>
 #include <string.h>
@@ -68,6 +69,11 @@
 #define SERVER "127.0.0.1"
 #define PORT 2003
 #define BufferLength 512
+
+/* Initialize connection stuff */
+static int conn = 0;
+static int sd, rc, length = sizeof(int);
+char temp;
 
 typedef struct _log_events {
 	FILE *log_file;
@@ -134,52 +140,61 @@ static void destroy(void *_log)
 static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
 {
     /* Variable and structure definitions. */
-    int sd, rc, length = sizeof(int);
-    struct sockaddr_in serveraddr;
-    char server[255];
-    char temp;
-    struct hostent *hostp;
-    /* get a socket descriptor */
-    if((sd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-	perror("Client-socket() error");
-	exit(-1);
-    } 
-     
-    memset(&serveraddr, 0x00, sizeof(struct sockaddr_in));
-    serveraddr.sin_family = AF_INET;
-    serveraddr.sin_port = htons(PORT);
-     
-    if((serveraddr.sin_addr.s_addr = inet_addr(SERVER)) == (unsigned long)INADDR_NONE) {
-        /* When passing the host name of the server as a */
-        /* parameter to this program, use the gethostbyname() */
-        /* function to retrieve the address of the host server. */
-        /***************************************************/
-        /* get host address */
-        hostp = gethostbyname(SERVER);
-        if(hostp == (struct hostent *)NULL) {
-            printf("HOST NOT FOUND --> ");
-            /* h_errno is usually defined */
-            /* in netdb.h */
-            printf("h_errno = %d\n",h_errno);
-            close(sd);
-            exit(-1);
-        }
-        memcpy(&serveraddr.sin_addr, hostp->h_addr, sizeof(serveraddr.sin_addr));
-    }
-     
-    /* After the socket descriptor is received, the */
-    /* connect() function is used to establish a */
-    /* connection to the server. */
-    /***********************************************/
-    /* connect() to server. */
-    if((rc = connect(sd, (struct sockaddr *)&serveraddr, sizeof(serveraddr))) < 0) {
-        perror("Client-connect() error");
-        close(sd);
-        exit(-1);
-    }
     int b,e;
     char *hostname = regexp(pc->port_id.node_name,"[a-z]+[0-9]+",&b,&e);
-    char buf[BufferLength];
+	if (conn == 0){
+		conn = 1;
+		printf("[%s] Start open socket\n", hostname);
+		struct sockaddr_in serveraddr;
+		struct hostent *hostp;
+		/* get a socket descriptor */
+		if((sd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+			perror("Client-socket() error\n");
+			exit(-1);
+		} else {
+			printf("[%s] Connection established\n", hostname);
+		}
+     
+		memset(&serveraddr, 0x00, sizeof(struct sockaddr_in));
+		serveraddr.sin_family = AF_INET;
+		serveraddr.sin_port = htons(PORT);
+		 
+		if((serveraddr.sin_addr.s_addr = inet_addr(SERVER)) == (unsigned long)INADDR_NONE) {
+			/* When passing the host name of the server as a */
+			/* parameter to this program, use the gethostbyname() */
+			/* function to retrieve the address of the host server. */
+			/***************************************************/
+			/* get host address */
+			hostp = gethostbyname(SERVER);
+			if(hostp == (struct hostent *)NULL) {
+				printf("HOST NOT FOUND --> ");
+				/* h_errno is usually defined */
+				/* in netdb.h */
+				printf("h_errno = %d\n",h_errno);
+				close(sd);
+				exit(-1);
+			}
+			memcpy(&serveraddr.sin_addr, hostp->h_addr, sizeof(serveraddr.sin_addr));
+		}
+		 
+		/* After the socket descriptor is received, the */
+		/* connect() function is used to establish a */
+		/* connection to the server. */
+		/***********************************************/
+		/* connect() to server. */
+		if((rc = connect(sd, (struct sockaddr *)&serveraddr, sizeof(serveraddr))) < 0) {
+			perror("Client-connect() error");
+			close(sd);
+			exit(-1);
+		}
+		conn = 2;
+		printf("[%s] socket open\n", hostname);
+	}
+	if (conn == 1) {
+		printf("[%s] socket not finished yet (sleep 100) \n", hostname);
+		sleep(100);
+	}
+   char buf[BufferLength];
     sprintf(buf, "ib.%s.%d.err.link_err_recover %d %d\n",
 	    hostname, pc->port_id.port_num,
 	    pc->link_err_recover, time(NULL));
@@ -228,7 +243,6 @@ static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
         close(sd);
         exit(-1);
     } 
-    close(sd);
 }
 
 /** =========================================================================
