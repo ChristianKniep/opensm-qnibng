@@ -212,6 +212,9 @@ static void destroy(void *_log)
  */
 static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
 {
+    if (pc->time_diff_s==0) {
+        return;
+    }
     connect_carbon();
     /* Variable and structure definitions. */
     int b,e;
@@ -219,37 +222,37 @@ static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
     char buf[BufferLength];
     sprintf(buf, "ib.%s.%i.err.link_err_recover %" PRIu64 " %jd\n",
 	    hostname, pc->port_id.port_num,
-	    pc->link_err_recover, time(NULL));
+	    (pc->link_err_recover/pc->time_diff_s), time(NULL));
     sprintf(&buf[strlen(buf)], "ib.%s.%i.err.link_downed %" PRIu64 " %jd\n",
 	    hostname, pc->port_id.port_num,
-	    pc->link_downed, time(NULL));
+	    (pc->link_downed/pc->time_diff_s), time(NULL));
     sprintf(&buf[strlen(buf)], "ib.%s.%i.err.rcv_err %" PRIu64 " %jd\n",
 	    hostname, pc->port_id.port_num,
-	    pc->rcv_err, time(NULL));
+	    (pc->rcv_err/pc->time_diff_s), time(NULL));
     sprintf(&buf[strlen(buf)], "ib.%s.%i.err.rcv_rem_phys_err %" PRIu64 " %jd\n",
 	    hostname, pc->port_id.port_num,
-	    pc->rcv_rem_phys_err, time(NULL));
+	    (pc->rcv_rem_phys_err/pc->time_diff_s), time(NULL));
     sprintf(&buf[strlen(buf)], "ib.%s.%i.err.rcv_switch_relay_err %" PRIu64 " %jd\n",
 	    hostname, pc->port_id.port_num,
-	    pc->rcv_switch_relay_err, time(NULL));
+	    (pc->rcv_switch_relay_err/pc->time_diff_s), time(NULL));
     sprintf(&buf[strlen(buf)], "ib.%s.%i.err.xmit_discards %" PRIu64 " %jd\n",
 	    hostname, pc->port_id.port_num,
-	    pc->xmit_discards, time(NULL));
+	    (pc->xmit_discards/pc->time_diff_s), time(NULL));
     sprintf(&buf[strlen(buf)], "ib.%s.%i.err.xmit_constraint_err %" PRIu64 " %jd\n",
 	    hostname, pc->port_id.port_num,
-	    pc->xmit_constraint_err, time(NULL));
+	    (pc->xmit_constraint_err/pc->time_diff_s), time(NULL));
     sprintf(&buf[strlen(buf)], "ib.%s.%i.err.rcv_constraint_err %" PRIu64 " %jd\n",
 	    hostname, pc->port_id.port_num,
-	    pc->rcv_constraint_err, time(NULL));
+	    (pc->rcv_constraint_err/pc->time_diff_s), time(NULL));
     sprintf(&buf[strlen(buf)], "ib.%s.%i.err.link_integrity %" PRIu64 " %jd\n",
 	    hostname, pc->port_id.port_num,
-	    pc->link_integrity, time(NULL));
+	    (pc->link_integrity/pc->time_diff_s), time(NULL));
     sprintf(&buf[strlen(buf)], "ib.%s.%i.err.buffer_overrun %" PRIu64 " %jd\n",
 	    hostname, pc->port_id.port_num,
-	    pc->buffer_overrun, time(NULL));
+	    (pc->buffer_overrun/pc->time_diff_s), time(NULL));
     sprintf(&buf[strlen(buf)], "ib.%s.%i.err.vl15_dropped %" PRIu64 " %jd\n\0",
 	    hostname, pc->port_id.port_num,
-	    pc->vl15_dropped, time(NULL));
+	    (pc->vl15_dropped/pc->time_diff_s), time(NULL));
     send_metric(buf);
 }
 
@@ -257,22 +260,25 @@ static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
  */
 static void handle_port_counter_ext(_log_events_t * log, osm_epi_dc_event_t * epc)
 {
+    if (epc->time_diff_s==0) {
+        return;
+    }
     connect_carbon();
 	int b,e;
     char *hostname = regexp(epc->port_id.node_name,"[a-z]+[0-9]+",&b,&e);
     char buf[BufferLength];
     sprintf(buf, "ib.%s.%i.perf.rcv_data %" PRIu64 " %jd\n",
 	    hostname, epc->port_id.port_num,
-	    epc->rcv_data, time(NULL));
+	    (epc->rcv_data/epc->time_diff_s), time(NULL));
     sprintf(&buf[strlen(buf)], "ib.%s.%i.perf.xmit_data %" PRIu64 " %jd\n",
 	    hostname, epc->port_id.port_num,
-	    epc->xmit_data, time(NULL));
+	    (epc->xmit_data/epc->time_diff_s), time(NULL));
     sprintf(&buf[strlen(buf)], "ib.%s.%i.perf.rcv_pkts %" PRIu64 " %jd\n",
 	    hostname, epc->port_id.port_num,
-	    epc->rcv_pkts, time(NULL));
+	    (epc->rcv_pkts/epc->time_diff_s), time(NULL));
     sprintf(&buf[strlen(buf)], "ib.%s.%i.perf.xmit_pkts %" PRIu64 " %jd\n",
 	    hostname, epc->port_id.port_num,
-	    epc->xmit_pkts, time(NULL));
+	    (epc->xmit_pkts/epc->time_diff_s), time(NULL));
     send_metric(buf);
 }
 
