@@ -73,86 +73,31 @@
 /* Initialize connection stuff */
 static int conn = 0;
 static int sd, length = sizeof(int);
+static struct sockaddr_in serv_addr;
+static int slen=sizeof(serv_addr);
 
 typedef struct _log_events {
 	FILE *log_file;
 	osm_log_t *osmlog;
 } _log_events_t;
 
-int connect_carbon() {
-    int rc = sizeof(int);
-    if (conn == 0){
-        conn = 1;
-        printf("Start open socket\n");
-        struct sockaddr_in serveraddr;
-        struct hostent *hostp;
-        /* get a socket descriptor */
-        if((sd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-            perror("Client-socket() error\n");
-            exit(-1);
-        } else {
-            printf("Connection established\n");
+int connect_statsd() {
+    /* create socket */
+    if (sd==0) {
+        if ((sd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1)
+            err("socket");
+        bzero(&serv_addr, sizeof(serv_addr));
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_port = htons(8125);
+        if (inet_aton("127.0.0.1", &serv_addr.sin_addr)==0)
+        {
+            fprintf(stderr, "inet_aton() failed\n");
+            exit(1);
         }
-     
-        memset(&serveraddr, 0x00, sizeof(struct sockaddr_in));
-        serveraddr.sin_family = AF_INET;
-        serveraddr.sin_port = htons(PORT);
-         
-        if((serveraddr.sin_addr.s_addr = inet_addr(SERVER)) == (unsigned long)INADDR_NONE) {
-            /* When passing the host name of the server as a */
-            /* parameter to this program, use the gethostbyname() */
-            /* function to retrieve the address of the host server. */
-            /***************************************************/
-            /* get host address */
-            hostp = gethostbyname(SERVER);
-            if(hostp == (struct hostent *)NULL) {
-                printf("HOST NOT FOUND --> ");
-                /* h_errno is usually defined */
-                /* in netdb.h */
-                printf("h_errno = %d\n",h_errno);
-                close(sd);
-                exit(-1);
-            }
-            memcpy(&serveraddr.sin_addr, hostp->h_addr, sizeof(serveraddr.sin_addr));
-        }
-         
-        /* After the socket descriptor is received, the */
-        /* connect() function is used to establish a */
-        /* connection to the server. */
-        /***********************************************/
-        /* connect() to server. */
-        if((rc = connect(sd, (struct sockaddr *)&serveraddr, sizeof(serveraddr))) < 0) {
-            perror("Client-connect() error");
-            close(sd);
-            return -1;
-        }
-        conn = 2;
-        printf("socket open\n");
     }
-    if (conn == 1) {
-        printf("socket not finished yet (sleep 100) \n");
-        sleep(100);
-    }
-    return 0;
+        return 0;
 }
 
-int send_metric(char *metric) {
-    char temp;
-    int rc = sizeof(int);
-    rc = write(sd, metric, strlen(metric));
-    if(rc < 0) {
-        perror("Client-write() error");
-        rc = getsockopt(sd, SOL_SOCKET, SO_ERROR, &temp, &length);
-        if(rc == 0) {
-            /* Print out the asynchronously received error. */
-            errno = temp;
-            perror("SO_ERROR was");
-        }
-        conn = 0;
-        close(sd);
-    }
-    return rc;
-}
 /**** Regex Function
  * Might be to heavy for this function, due to the hight frequency
  * but for starters
@@ -212,48 +157,42 @@ static void destroy(void *_log)
  */
 static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
 {
+    return;
     if (pc->time_diff_s==0) {
         return;
     }
-    connect_carbon();
+    connect_statsd();
     /* Variable and structure definitions. */
     int b,e;
     char *hostname = regexp(pc->port_id.node_name,"[a-z]+[0-9]+",&b,&e);
     char buf[BufferLength];
-    sprintf(buf, "ib.%s.%i.err.link_err_recover %" PRIu64 " %jd\n",
-	    hostname, pc->port_id.port_num,
-	    (pc->link_err_recover/pc->time_diff_s), time(NULL));
-    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.link_downed %" PRIu64 " %jd\n",
-	    hostname, pc->port_id.port_num,
-	    (pc->link_downed/pc->time_diff_s), time(NULL));
-    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.rcv_err %" PRIu64 " %jd\n",
-	    hostname, pc->port_id.port_num,
-	    (pc->rcv_err/pc->time_diff_s), time(NULL));
-    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.rcv_rem_phys_err %" PRIu64 " %jd\n",
-	    hostname, pc->port_id.port_num,
-	    (pc->rcv_rem_phys_err/pc->time_diff_s), time(NULL));
-    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.rcv_switch_relay_err %" PRIu64 " %jd\n",
-	    hostname, pc->port_id.port_num,
-	    (pc->rcv_switch_relay_err/pc->time_diff_s), time(NULL));
-    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.xmit_discards %" PRIu64 " %jd\n",
-	    hostname, pc->port_id.port_num,
-	    (pc->xmit_discards/pc->time_diff_s), time(NULL));
-    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.xmit_constraint_err %" PRIu64 " %jd\n",
-	    hostname, pc->port_id.port_num,
-	    (pc->xmit_constraint_err/pc->time_diff_s), time(NULL));
-    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.rcv_constraint_err %" PRIu64 " %jd\n",
-	    hostname, pc->port_id.port_num,
-	    (pc->rcv_constraint_err/pc->time_diff_s), time(NULL));
-    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.link_integrity %" PRIu64 " %jd\n",
-	    hostname, pc->port_id.port_num,
-	    (pc->link_integrity/pc->time_diff_s), time(NULL));
-    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.buffer_overrun %" PRIu64 " %jd\n",
-	    hostname, pc->port_id.port_num,
-	    (pc->buffer_overrun/pc->time_diff_s), time(NULL));
-    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.vl15_dropped %" PRIu64 " %jd\n\0",
-	    hostname, pc->port_id.port_num,
-	    (pc->vl15_dropped/pc->time_diff_s), time(NULL));
-    send_metric(buf);
+    sprintf(buf, "ib.%s.%i.err.link_err_recover:+%lu|g\n",
+        hostname, pc->port_id.port_num, pc->link_err_recover);
+    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.link_downed:+%lu|g\n",
+        hostname, pc->port_id.port_num, pc->link_downed);
+    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.rcv_err:+%lu|g\n",
+        hostname, pc->port_id.port_num, pc->rcv_err);
+    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.rcv_rem_phys_err:+%lu|g\n",
+        hostname, pc->port_id.port_num, pc->rcv_rem_phys_err);
+    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.rcv_switch_relay_err:+%lu|g\n",
+        hostname, pc->port_id.port_num, pc->rcv_switch_relay_err);
+    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.xmit_discards:+%lu|g\n",
+        hostname, pc->port_id.port_num, pc->xmit_discards);
+    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.xmit_constraint_err:+%lu|g\n",
+        hostname, pc->port_id.port_num, pc->xmit_constraint_err);
+    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.rcv_constraint_err:+%lu|g\n",
+        hostname, pc->port_id.port_num, pc->rcv_constraint_err);
+    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.link_integrity:+%lu|g\n",
+        hostname, pc->port_id.port_num, pc->link_integrity);
+    sprintf(&buf[strlen(buf)], "ib.%s.%i.err.buffer_overrun:+%lu|g\n",
+        hostname, pc->port_id.port_num, pc->buffer_overrun);
+    if (pc->vl15_dropped != NULL) {
+        sprintf(&buf[strlen(buf)], "ib.%s.%i.err.vl15_dropped:+%lu|g\n",
+            hostname, pc->port_id.port_num, pc->vl15_dropped);
+    }
+    if (sendto(sd, buf, strlen(buf), 0, (struct sockaddr*)&serv_addr, slen)==-1)
+        err("sendto()");
+    //fprintf(log->log_file,buf);
 }
 
 /** =========================================================================
@@ -263,23 +202,24 @@ static void handle_port_counter_ext(_log_events_t * log, osm_epi_dc_event_t * ep
     if (epc->time_diff_s==0) {
         return;
     }
-    connect_carbon();
+    if (epc->time_diff_s >= 10) {
+        return;
+    }
+    connect_statsd();
 	int b,e;
     char *hostname = regexp(epc->port_id.node_name,"[a-z]+[0-9]+",&b,&e);
     char buf[BufferLength];
-    sprintf(buf, "ib.%s.%i.perf.rcv_data %" PRIu64 " %jd\n",
-	    hostname, epc->port_id.port_num,
-	    (epc->rcv_data/epc->time_diff_s), time(NULL));
-    sprintf(&buf[strlen(buf)], "ib.%s.%i.perf.xmit_data %" PRIu64 " %jd\n",
-	    hostname, epc->port_id.port_num,
-	    (epc->xmit_data/epc->time_diff_s), time(NULL));
-    sprintf(&buf[strlen(buf)], "ib.%s.%i.perf.rcv_pkts %" PRIu64 " %jd\n",
-	    hostname, epc->port_id.port_num,
-	    (epc->rcv_pkts/epc->time_diff_s), time(NULL));
-    sprintf(&buf[strlen(buf)], "ib.%s.%i.perf.xmit_pkts %" PRIu64 " %jd\n",
-	    hostname, epc->port_id.port_num,
-	    (epc->xmit_pkts/epc->time_diff_s), time(NULL));
-    send_metric(buf);
+    sprintf(buf, "ib.%s.%i.perf.rcv_data:+%lu|g\n",
+	    hostname, epc->port_id.port_num, epc->rcv_data);
+    sprintf(&buf[strlen(buf)], "ib.%s.%i.perf.xmit_data:+%lu|g\n",
+	    hostname, epc->port_id.port_num, epc->xmit_data);
+	sprintf(&buf[strlen(buf)], "ib.%s.%i.perf.rcv_pkts:+%lu|g\n",
+	    hostname, epc->port_id.port_num, epc->rcv_pkts);
+    sprintf(&buf[strlen(buf)], "ib.%s.%i.perf.xmit_pkts:+%lu|g\n\0",
+	    hostname, epc->port_id.port_num, epc->xmit_pkts);
+    if (sendto(sd, buf, strlen(buf), 0, (struct sockaddr*)&serv_addr, slen)==-1)
+        err("sendto()");
+    //fprintf(log->log_file,buf);
 }
 
 /** =========================================================================
