@@ -157,7 +157,6 @@ static void destroy(void *_log)
  */
 static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
 {
-    return;
     if (pc->time_diff_s==0) {
         return;
     }
