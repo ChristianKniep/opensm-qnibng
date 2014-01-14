@@ -1,0 +1,867 @@
+Current OpenSM Routing
+7/4/11
+
+OpenSM offers nine routing engines:
+
+1.  Min Hop Algorithm - based on the minimum hops to each node where the
+path length is optimized.
+
+2.  UPDN Unicast routing algorithm - also based on the minimum hops to each
+node, but it is constrained to ranking rules. This algorithm should be chosen
+if the subnet is not a pure Fat Tree, and deadlock may occur due to a
+loop in the subnet.
+
+3. DNUP Unicast routing algorithm - similar to UPDN but allows routing in
+fabrics which have some CA nodes attached closer to the roots than some switch
+nodes.
+
+4.  Fat-tree Unicast routing algorithm - this algorithm optimizes routing
+of fat-trees for congestion-free "shift" communication pattern.
+It should be chosen if a subnet is a symmetrical fat-tree.
+Similar to UPDN routing, Fat-tree routing is credit-loop-free.
+
+5. LASH unicast routing algorithm - uses Infiniband virtual layers
+(SL) to provide deadlock-free shortest-path routing while also
+distributing the paths between layers. LASH is an alternative
+deadlock-free topology-agnostic routing algorithm to the non-minimal
+UPDN algorithm avoiding the use of a potentially congested root node.
+
+6. DOR Unicast routing algorithm - based on the Min Hop algorithm, but
+avoids port equalization except for redundant links between the same
+two switches.  This provides deadlock free routes for hypercubes when
+the fabric is cabled as a hypercube and for meshes when cabled as a
+mesh (see details below).
+
+7. Torus-2QoS unicast routing algorithm - a DOR-based routing algorithm
+specialized for 2D/3D torus topologies.  Torus-2QoS provides deadlock-free
+routing while supporting two quality of service (QoS) levels.  In addition
+it is able to route around multiple failed fabric links or a single failed
+fabric switch without introducing deadlocks, and without changing path SL
+values granted before the failure.
+
+8. DFSSSP unicast routing algorithm - a deadlock-free single-source-
+shortest-path routing, which uses the SSSP algorithm (see algorithm 9.)
+as the base to optimize link utilization and uses Infiniband virtual lanes
+(SL) to provide deadlock-freedom.
+
+9. SSSP unicast routing algorithm - a single-source-shortest-path routing
+algorithm, which globally balances the number of routes per link to
+optimize link utilization. This routing algorithm has no restrictions
+in terms of the underlying topology.
+
+OpenSM provides an optional unicast routing cache (enabled by -A or
+--ucast_cache options). When enabled, unicast routing cache prevents
+routing recalculation (which is a heavy task in a large cluster) when
+there was no topology change detected during the heavy sweep, or when
+the topology change does not require new routing calculation, e.g. when
+one or more CAs/RTRs/leaf switches going down, or one or more of these
+nodes coming back after being down.
+A very common case that is handled by the unicast routing cache is host
+reboot, which otherwise would cause two full routing recalculations: one
+when the host goes down, and the other when the host comes back online.
+
+OpenSM also supports a file method which can load routes from a table. See
+modular-routing.txt for more information on this.
+
+The basic routing algorithm is comprised of two stages:
+1. MinHop matrix calculation
+   How many hops are required to get from each port to each LID ?
+   The algorithm to fill these tables is different if you run standard
+(min hop) or Up/Down.
+   For standard routing, a "relaxation" algorithm is used to propagate
+min hop from every destination LID through neighbor switches
+   For Up/Down routing, a BFS from every target is used. The BFS tracks link
+direction (up or down) and avoid steps that will perform up after a down
+step was used.
+
+2. Once MinHop matrices exist, each switch is visited and for each target LID,
+a decision is made as to what port should be used to get to that LID.
+   This step is common to standard and Up/Down routing. Each port has a
+counter counting the number of target LIDs going through it.
+   When there are multiple alternative ports with same MinHop to a LID,
+the one with less previously assigned LIDs is selected.
+   If LMC > 0, more checks are added: Within each group of LIDs assigned to
+same target port,
+   a. use only ports which have same MinHop
+   b. first prefer the ones that go to different systemImageGuid (then
+the previous LID of the same LMC group)
+   c. if none - prefer those which go through another NodeGuid
+   d. fall back to the number of paths method (if all go to same node).
+
+
+Effect of Topology Changes
+
+OpenSM will preserve existing routing in any case where there is no change in
+the fabric switches unless the -r (--reassign_lids) option is specified.
+
+-r
+--reassign_lids
+          This option causes OpenSM to reassign LIDs to all
+          end nodes. Specifying -r on a running subnet
+          may disrupt subnet traffic.
+          Without -r, OpenSM attempts to preserve existing
+          LID assignments resolving multiple use of same LID.
+
+If a link is added or removed, OpenSM does not recalculate
+the routes that do not have to change. A route has to change
+if the port is no longer UP or no longer the MinHop. When routing changes
+are performed, the same algorithm for balancing the routes is invoked.
+
+In the case of using the file based routing, any topology changes are
+currently ignored The 'file' routing engine just loads the LFTs from the file
+specified, with no reaction to real topology. Obviously, this will not be able
+to recheck LIDs (by GUID) for disconnected nodes, and LFTs for non-existent
+switches will be skipped. Multicast is not affected by 'file' routing engine
+(this uses min hop tables).
+
+
+Min Hop Algorithm
+-----------------
+
+The Min Hop algorithm is invoked by default if no routing algorithm is
+specified.  It can also be invoked by specifying '-R minhop'.
+
+The Min Hop algorithm is divided into two stages: computation of
+min-hop tables on every switch and LFT output port assignment. Link
+subscription is also equalized with the ability to override based on
+port GUID. The latter is supplied by:
+
+-i <equalize-ignore-guids-file>
+-ignore-guids <equalize-ignore-guids-file>
+          This option provides the means to define a set of ports
+          (by guids) that will be ignored by the link load
+          equalization algorithm.
+
+LMC awareness routes based on (remote) system or switch basis.
+
+
+UPDN Routing Algorithm
+----------------------
+
+Purpose of UPDN Algorithm
+
+The UPDN algorithm is designed to prevent deadlocks from occurring in loops
+of the subnet. A loop-deadlock is a situation in which it is no longer
+possible to send data between any two hosts connected through the loop. As
+such, the UPDN routing algorithm should be used if the subnet is not a pure
+Fat Tree, and one of its loops may experience a deadlock (due, for example,
+to high pressure).
+
+The UPDN algorithm is based on the following main stages:
+
+1.  Auto-detect root nodes - based on the CA hop length from any switch in
+the subnet, a statistical histogram is built for each switch (hop num vs
+number of occurrences). If the histogram reflects a specific column (higher
+than others) for a certain node, then it is marked as a root node. Since
+the algorithm is statistical, it may not find any root nodes. The list of
+the root nodes found by this auto-detect stage is used by the ranking
+process stage.
+
+    Note 1: The user can override the node list manually.
+    Note 2: If this stage cannot find any root nodes, and the user did not
+            specify a guid list file, OpenSM defaults back to the Min Hop
+            routing algorithm.
+
+2.  Ranking process - All root switch nodes (found in stage 1) are assigned
+a rank of 0. Using the BFS algorithm, the rest of the switch nodes in the
+subnet are ranked incrementally. This ranking aids in the process of enforcing
+rules that ensure loop-free paths.
+
+3.  Min Hop Table setting - after ranking is done, a BFS algorithm is run from
+each (CA or switch) node in the subnet. During the BFS process, the FDB table
+of each switch node traversed by BFS is updated, in reference to the starting
+node, based on the ranking rules and guid values.
+
+At the end of the process, the updated FDB tables ensure loop-free paths
+through the subnet.
+
+Note: Up/Down routing does not allow LID routing communication between
+switches that are located inside spine "switch systems".
+The reason is that there is no way to allow a LID route between them
+that does not break the Up/Down rule.
+One ramification of this is that you cannot run SM on switches other
+than the leaf switches of the fabric.
+
+
+UPDN Algorithm Usage
+
+Activation through OpenSM
+
+Use '-R updn' option (instead of old '-u') to activate the UPDN algorithm.
+Use `-a <guid_list_file>' for adding an UPDN guid file that contains the
+root nodes for ranking.
+If the `-a' option is not used, OpenSM uses its auto-detect root nodes
+algorithm.
+
+Notes on the guid list file:
+1.   A valid guid file specifies one guid in each line. Lines with an invalid
+format will be discarded.
+2.   The user should specify the root switch guids. However, it is also
+possible to specify CA guids; OpenSM will use the guid of the switch (if
+it exists) that connects the CA to the subnet as a root node.
+
+
+To learn more about deadlock-free routing, see the article
+"Deadlock Free Message Routing in Multiprocessor Interconnection Networks"
+by William J Dally and Charles L Seitz (1985).
+
+
+DNUP Routing Algorithm
+----------------------
+
+Purpose:
+
+The DNUP algorithm is designed to serve a similar purpose to UPDN. However
+it is intended to work in network topologies which are unsuited to
+UPDN due to nodes being connected closer to the roots than some of
+the switches.  An example would be a fabric which contains nodes and
+uplinks connected to the same switch. The operation of DNUP is the
+same as UPDN with the exception of the ranking process.  In DNUP all
+switch nodes are ranked based solely on their distance from CA Nodes,
+all switch nodes directly connected to at least one CA are assigned a
+value of 1 all other switch nodes are assigned a value of one more than
+the minimum rank of all neighbor switch nodes.
+
+
+Fat-tree Routing Algorithm
+--------------------------
+
+Purpose:
+
+The fat-tree algorithm optimizes routing for "shift" communication pattern.
+It should be chosen if a subnet is a symmetrical or almost symmetrical
+fat-tree of various types.
+It supports not just K-ary-N-Trees, by handling for non-constant K,
+cases where not all leafs (CAs) are present, any Constant
+Bisectional Ratio (CBB) ratio.  As in UPDN, fat-tree also prevents
+credit-loop-deadlocks.
+
+If the root guid file is not provided ('-a' or '--root_guid_file' options),
+the topology has to be pure fat-tree that complies with the following rules:
+  - Tree rank should be between two and eight (inclusively)
+  - Switches of the same rank should have the same number
+    of UP-going port groups*, unless they are root switches,
+    in which case the shouldn't have UP-going ports at all.
+  - Switches of the same rank should have the same number
+    of DOWN-going port groups, unless they are leaf switches.
+  - Switches of the same rank should have the same number
+    of ports in each UP-going port group.
+  - Switches of the same rank should have the same number
+    of ports in each DOWN-going port group.
+  - All the CAs have to be at the same tree level (rank).
+
+If the root guid file is provided, the topology doesn't have to be pure
+fat-tree, and it should only comply with the following rules:
+  - Tree rank should be between two and eight (inclusively)
+  - All the Compute Nodes** have to be at the same tree level (rank).
+    Note that non-compute node CAs are allowed here to be at different
+    tree ranks.
+
+* ports that are connected to the same remote switch are referenced as
+'port group'.
+** list of compute nodes (CNs) can be specified by '-u' or '--cn_guid_file'
+OpenSM options.
+
+Note that although fat-tree algorithm supports trees with non-integer CBB
+ratio, the routing will not be as balanced as in case of integer CBB ratio.
+In addition to this, although the algorithm allows leaf switches to have any
+number of CAs, the closer the tree is to be fully populated, the more effective
+the "shift" communication pattern will be.
+In general, even if the root list is provided, the closer the topology to a
+pure and symmetrical fat-tree, the more optimal the routing will be.
+
+The algorithm also dumps compute node ordering file (opensm-ftree-ca-order.dump)
+in the same directory where the OpenSM log resides. This ordering file provides
+the CN order that may be used to create efficient communication pattern, that
+will match the routing tables.
+
+Routing between non-CN nodes
+
+
+The use of the cn_guid_file option allows non-CN nodes to be located on different levels in the fat tree.
+In such case, it is not guaranteed that the Fat Tree algorithm will route between two non-CN nodes.
+In the scheme below, N1, N2 and N3 are non-CN nodes. Although all the CN have routes to and from them,
+there will not necessarily be a route between N1,N2 and N3.
+Such routes would require to use at least one of the Switch the wrong way around
+(In fact, go out of one of the top Switch through a downgoing port while we are supposed to go up).
+
+  Spine1   Spine2    Spine 3
+   / \     /  |  \    /   \
+  /   \   /   |   \  /     \
+ N1  Switch   N2  Switch    N3
+      /|\          /|\
+     / | \        / | \
+    Going down to compute nodes
+
+To solve this problem, a list of non-CN nodes can be specified by \'-G\' or \'--io_guid_file\' option.
+Theses nodes will be allowed to use switches the wrong way around a specific number of times (specified by \'-H\' or \'--max_reverse_hops\'.
+With the proper max_reverse_hops and io_guid_file values, you can ensure full connectivity in the Fat Tree.
+
+In the scheme above, with a max_reverse_hop of 1, routes will be instanciated between N1<->N2 and N2<->N3.
+With a max_reverse_hops value of 2, N1,N2 and N3 will all have routes between them.
+
+Please note that using max_reverse_hops creates routes that use the switch in a counter-stream way.
+This option should never be used to connect nodes with high bandwidth traffic between them ! It should only be used
+to allow connectivity for HA purposes or similar.
+Also having routes the other way around can in theory cause credit loops.
+
+Use these options with extreme care !
+
+
+Usage:
+
+Activation through OpenSM
+
+Use '-R ftree' option to activate the fat-tree algorithm.
+
+Note: LMC > 0 is not supported by fat-tree routing. If this is
+specified, the default routing algorithm is invoked instead.
+
+
+LASH Routing Algorithm
+----------------------
+
+LASH is an acronym for LAyered SHortest Path Routing. It is a
+deterministic shortest path routing algorithm that enables topology
+agnostic deadlock-free routing within communication networks.
+
+When computing the routing function, LASH analyzes the network
+topology for the shortest-path routes between all pairs of sources /
+destinations and groups these paths into virtual layers in such a way
+as to avoid deadlock.
+
+Note LASH analyzes routes and ensures deadlock freedom between switch
+pairs. The link from HCA between and switch does not need virtual
+layers as deadlock will not arise between switch and HCA.
+
+In more detail, the algorithm works as follows:
+
+1) LASH determines the shortest-path between all pairs of source /
+destination switches. Note, LASH ensures the same SL is used for all
+SRC/DST - DST/SRC pairs and there is no guarantee that the return
+path for a given DST/SRC will be the reverse of the route SRC/DST.
+
+2) LASH then begins an SL assignment process where a route is assigned
+to a layer (SL) if the addition of that route does not cause deadlock
+within that layer. This is achieved by maintaining and analysing a
+channel dependency graph for each layer. Once the potential addition
+of a path could lead to deadlock, LASH opens a new layer and continues
+the process.
+
+3) Once this stage has been completed, it is highly likely that the
+first layers processed will contain more paths than the latter ones.
+To better balance the use of layers, LASH moves paths from one layer
+to another so that the number of paths in each layer averages out.
+
+Note, the implementation of LASH in opensm attempts to use as few layers
+as possible. This number can be less than the number of actual layers
+available.
+
+In general LASH is a very flexible algorithm. It can, for example,
+reduce to Dimension Order Routing in certain topologies, it is topology
+agnostic and fares well in the face of faults.
+
+It has been shown that for both regular and irregular topologies, LASH
+outperforms Up/Down. The reason for this is that LASH distributes the
+traffic more evenly through a network, avoiding the bottleneck issues
+related to a root node and always routes shortest-path.
+
+The algorithm was developed by Simula Research Laboratory.
+
+To learn more about LASH and the flexibility behind it, the requirement
+for layers, performance comparisons to other algorithms, see the
+following articles:
+
+"Layered Routing in Irregular Networks", Lysne et al, IEEE
+Transactions on Parallel and Distributed Systems, VOL.16, No12,
+December 2005.
+
+"Routing for the ASI Fabric Manager", Solheim et al. IEEE
+Communications Magazine, Vol.44, No.7, July 2006.
+
+"Layered Shortest Path (LASH) Routing in Irregular System Area
+Networks", Skeie et al. IEEE Computer Society Communication
+Architecture for Clusters 2002.
+
+
+Use '-R lash -Q ' option to activate the LASH algorithm.
+
+Note: QoS support has to be turned on in order that SL/VL mappings are
+used.
+
+Note: LMC > 0 is not supported by the LASH routing. If this is
+specified, the default routing algorithm is invoked instead.
+
+For open regular cartesian meshes the DOR algorithm is the ideal
+routing algorithm. For toroidal meshes on the other hand there
+are routing loops that can cause deadlocks. LASH can be used to
+route these cases. The performance of LASH can be improved by
+preconditioning the mesh in cases where there are multiple links
+connecting switches and also in cases where the switches are not
+cabled consistently. An option exists for LASH to do this. To
+invoke this use '-R lash -Q --do_mesh_analysis'. This will
+add an additional phase that analyses the mesh to try to determine
+the dimension and size of a mesh. If it determines that the mesh
+looks like an open or closed cartesian mesh it reorders the ports
+in dimension order before the rest of the LASH algorithm runs.
+
+DOR Routing Algorithm
+---------------------
+
+The Dimension Order Routing algorithm is based on the Min Hop
+algorithm and so uses shortest paths.  Instead of spreading traffic
+out across different paths with the same shortest distance, it chooses
+among the available shortest paths based on an ordering of dimensions.
+Each port must be consistently cabled to represent a hypercube
+dimension or a mesh dimension.  Paths are grown from a destination
+back to a source using the lowest dimension (port) of available paths
+at each step.  This provides the ordering necessary to avoid deadlock.
+When there are multiple links between any two switches, they still
+represent only one dimension and traffic is balanced across them
+unless port equalization is turned off.  In the case of hypercubes,
+the same port must be used throughout the fabric to represent the
+hypercube dimension and match on both ends of the cable.  In the case
+of meshes, the dimension should consistently use the same pair of
+ports, one port on one end of the cable, and the other port on the
+other end, continuing along the mesh dimension.
+
+Use '-R dor' option to activate the DOR algorithm.
+
+Torus-2QoS Routing Algorithm
+----------------------------
+
+Torus-2QoS is a routing algorithm designed for large-scale 2D/3D torus fabrics.
+The torus-2QoS routing engine can provide the following functionality on
+a 2D/3D torus:
+- routing that is free of credit loops
+- two levels of QoS, assuming switches support 8 data VLs
+- ability to route around a single failed switch, and/or multiple failed
+    links, without
+    - introducing credit loops
+    - changing path SL values
+- very short run times, with good scaling properties as fabric size
+    increases
+
+Unicast Routing:
+
+Torus-2QoS is a DOR-based algorithm that avoids deadlocks that would otherwise
+occur in a torus using the concept of a dateline for each torus dimension.
+It encodes into a path SL which datelines the path crosses as follows:
+
+  sl = 0;
+  for (d = 0; d < torus_dimensions; d++)
+    /* path_crosses_dateline(d) returns 0 or 1 */
+    sl |= path_crosses_dateline(d) << d;
+
+For a 3D torus, that leaves one SL bit free, which torus-2QoS uses to
+implement two QoS levels.
+
+Torus-2QoS also makes use of the output port dependence of switch SL2VL
+maps to encode into one VL bit the information encoded in three SL bits.
+It computes in which torus coordinate direction each inter-switch link
+"points", and writes SL2VL maps for such ports as follows:
+
+  for (sl = 0; sl < 16; sl ++)
+    /* cdir(port) reports which torus coordinate direction a switch port
+     * "points" in, and returns 0, 1, or 2 */
+    sl2vl(iport,oport,sl) = 0x1 & (sl >> cdir(oport));
+
+Thus, on a pristine 3D torus, i.e., in the absence of failed fabric switches,
+torus-2QoS consumes 8 SL values (SL bits 0-2) and 2 VL values (VL bit 0)
+per QoS level to provide deadlock-free routing on a 3D torus.
+
+Torus-2QoS routes around link failure by "taking the long way around" any
+1D ring interrupted by a link failure.  For example, consider the 2D 6x5
+torus below, where switches are denoted by [+a-zA-Z]:
+
+	|    |    |    |    |    |
+   4  --+----+----+----+----+----+--
+	|    |    |    |    |    |
+   3  --+----+----+----D----+----+--
+	|    |    |    |    |    |
+   2  --+----+----I----r----+----+--
+	|    |    |    |    |    |
+   1  --m----S----n----T----o----p--
+	|    |    |    |    |    |
+ y=0  --+----+----+----+----+----+--
+	|    |    |    |    |    |
+
+      x=0    1    2    3    4    5
+
+For a pristine fabric the path from S to D would be S-n-T-r-D.  In the
+event that either link S-n or n-T has failed, torus-2QoS would use the path
+S-m-p-o-T-r-D.  Note that it can do this without changing the path SL
+value; once the 1D ring m-S-n-T-o-p-m has been broken by failure, path
+segments using it cannot contribute to deadlock, and the x-direction
+dateline (between, say, x=5 and x=0) can be ignored for path segments on
+that ring.
+
+One result of this is that torus-2QoS can route around many simultaneous
+link failures, as long as no 1D ring is broken into disjoint segments.  For
+example, if links n-T and T-o have both failed, that ring has been broken
+into two disjoint segments, T and o-p-m-S-n.  Torus-2QoS checks for such
+issues, reports if they are found, and refuses to route such fabrics.
+
+Note that in the case where there are multiple parallel links between a pair
+of switches, torus-2QoS will allocate routes across such links in a round-
+robin fashion, based on ports at the path destination switch that are active
+and not used for inter-switch links.  Should a link that is one of several
+such parallel links fail, routes are redistributed across the remaining
+links.   When the last of such a set of parallel links fails, traffic is
+rerouted as described above.
+
+Handling a failed switch under DOR requires introducing into a path at
+least one turn that would be otherwise "illegal", i.e. not allowed by DOR
+rules.  Torus-2QoS will introduce such a turn as close as possible to the
+failed switch in order to route around it.
+
+In the above example, suppose switch T has failed, and consider the path
+from S to D.  Torus-2QoS will produce the path S-n-I-r-D, rather than the
+S-n-T-r-D path for a pristine torus, by introducing an early turn at n.
+Normal DOR rules will cause traffic arriving at switch I to be forwarded
+to switch r; for traffic arriving from I due to the "early" turn at n,
+this will generate an "illegal" turn at I.
+
+Torus-2QoS will also use the input port dependence of SL2VL maps to set VL
+bit 1 (which would be otherwise unused) for y-x, z-x, and z-y turns, i.e.,
+those turns that are illegal under DOR.  This causes the first hop after
+any such turn to use a separate set of VL values, and prevents deadlock in
+the presence of a single failed switch.
+
+For any given path, only the hops after a turn that is illegal under DOR
+can contribute to a credit loop that leads to deadlock.  So in the example
+above with failed switch T, the location of the illegal turn at I in the
+path from S to D requires that any credit loop caused by that turn must
+encircle the failed switch at T.  Thus the second and later hops after the
+illegal turn at I (i.e., hop r-D) cannot contribute to a credit loop
+because they cannot be used to construct a loop encircling T.  The hop I-r
+uses a separate VL, so it cannot contribute to a credit loop encircling T.
+
+Extending this argument shows that in addition to being capable of routing
+around a single switch failure without introducing deadlock, torus-2QoS can
+also route around multiple failed switches on the condition they are
+adjacent in the last dimension routed by DOR.  For example, consider the
+following case on a 6x6 2D torus:
+
+
+	|    |    |    |    |    |
+   5  --+----+----+----+----+----+--
+	|    |    |    |    |    |
+   4  --+----+----+----D----+----+--
+	|    |    |    |    |    |
+   3  --+----+----I----u----+----+--
+	|    |    |    |    |    |
+   2  --+----+----q----R----+----+--
+	|    |    |    |    |    |
+   1  --m----S----n----T----o----p--
+	|    |    |    |    |    |
+ y=0  --+----+----+----+----+----+--
+	|    |    |    |    |    |
+
+      x=0    1    2    3    4    5
+
+
+Suppose switches T and R have failed, and consider the path from S to D.
+Torus-2QoS will generate the path S-n-q-I-u-D, with an illegal turn at
+switch I, and with hop I-u using a VL with bit 1 set.
+
+As a further example, consider a case that torus-2QoS cannot route without
+deadlock: two failed switches adjacent in a dimension that is not the last
+dimension routed by DOR; here the failed switches are O and T:
+
+	|    |    |    |    |    |
+   5  --+----+----+----+----+----+--
+	|    |    |    |    |    |
+   4  --+----+----+----+----+----+--
+	|    |    |    |    |    |
+   3  --+----+----+----+----D----+--
+	|    |    |    |    |    |
+   2  --+----+----I----q----r----+--
+	|    |    |    |    |    |
+   1  --m----S----n----O----T----p--
+	|    |    |    |    |    |
+ y=0  --+----+----+----+----+----+--
+	|    |    |    |    |    |
+
+      x=0    1    2    3    4    5
+
+In a pristine fabric, torus-2QoS would generate the path from S to D as
+S-n-O-T-r-D.  With failed switches O and T, torus-2QoS will generate the
+path S-n-I-q-r-D, with illegal turn at switch I, and with hop I-q using a
+VL with bit 1 set.  In contrast to the earlier examples, the second hop
+after the illegal turn, q-r, can be used to construct a credit loop
+encircling the failed switches.
+
+Multicast Routing:
+
+Since torus-2QoS uses all four available SL bits, and the three data VL
+bits that are typically available in current switches, there is no way
+to use SL/VL values to separate multicast traffic from unicast traffic.
+Thus, torus-2QoS must generate multicast routing such that credit loops
+cannot arise from a combination of multicast and unicast path segments.
+
+It turns out that it is possible to construct spanning trees for multicast
+routing that have that property.  For the 2D 6x5 torus example above, here
+is the full-fabric spanning tree that torus-2QoS will construct, where "x"
+is the root switch and each "+" is a non-root switch:
+
+   4    +    +    +    +    +    +
+	|    |    |    |    |    |
+   3    +    +    +    +    +    +
+	|    |    |    |    |    |
+   2    +----+----+----x----+----+
+	|    |    |    |    |    |
+   1    +    +    +    +    +    +
+	|    |    |    |    |    |
+ y=0    +    +    +    +    +    +
+
+      x=0    1    2    3    4    5
+
+For multicast traffic routed from root to tip, every turn in the above
+spanning tree is a legal DOR turn.
+
+For traffic routed from tip to root, and some traffic routed through the
+root, turns are not legal DOR turns.  However, to construct a credit loop,
+the union of multicast routing on this spanning tree with DOR unicast
+routing can only provide 3 of the 4 turns needed for the loop.
+
+In addition, if none of the above spanning tree branches crosses a dateline
+used for unicast credit loop avoidance on a torus, and if multicast traffic
+is confined to SL 0 or SL 8 (recall that torus-2QoS uses SL bit 3 to
+differentiate QoS level), then multicast traffic also cannot contribute to
+the "ring" credit loops that are otherwise possible in a torus.
+
+Torus-2QoS uses these ideas to create a master spanning tree.  Every
+multicast group spanning tree will be constructed as a subset of the master
+tree, with the same root as the master tree.
+
+Such multicast group spanning trees will in general not be optimal for
+groups which are a subset of the full fabric. However, this compromise must
+be made to enable support for two QoS levels on a torus while preventing
+credit loops.
+
+In the presence of link or switch failures that result in a fabric for
+which torus-2QoS can generate credit-loop-free unicast routes, it is also
+possible to generate a master spanning tree for multicast that retains the
+required properties.  For example, consider that same 2D 6x5 torus, with
+the link from (2,2) to (3,2) failed.  Torus-2QoS will generate the following
+master spanning tree:
+
+   4    +    +    +    +    +    +
+	|    |    |    |    |    |
+   3    +    +    +    +    +    +
+	|    |    |    |    |    |
+   2  --+----+----+    x----+----+--
+	|    |    |    |    |    |
+   1    +    +    +    +    +    +
+	|    |    |    |    |    |
+ y=0    +    +    +    +    +    +
+
+      x=0    1    2    3    4    5
+
+Two things are notable about this master spanning tree.  First, assuming
+the x dateline was between x=5 and x=0, this spanning tree has a branch
+that crosses the dateline.  However, just as for unicast, crossing a
+dateline on a 1D ring (here, the ring for y=2) that is broken by a failure
+cannot contribute to a torus credit loop.
+
+Second, this spanning tree is no longer optimal even for multicast groups
+that encompass the entire fabric.  That, unfortunately, is a compromise that
+must be made to retain the other desirable properties of torus-2QoS routing.
+
+In the event that a single switch fails, torus-2QoS will generate a master
+spanning tree that has no "extra" turns by appropriately selecting a root
+switch.  In the 2D 6x5 torus example, assume now that the switch at (3,2),
+i.e. the root for a pristine fabric, fails.  Torus-2QoS will generate the
+following master spanning tree for that case:
+
+		       |
+   4    +    +    +    +    +    +
+	|    |    |    |    |    |
+   3    +    +    +    +    +    +
+	|    |    |         |    |
+   2    +    +    +         +    +
+	|    |    |         |    |
+   1    +----+----x----+----+----+
+	|    |    |    |    |    |
+ y=0    +    +    +    +    +    +
+		       |
+
+      x=0    1    2    3    4    5
+
+Assuming the y dateline was between y=4 and y=0, this spanning tree has
+a branch that crosses a dateline.  However, again this cannot contribute
+to credit loops as it occurs on a 1D ring (the ring for x=3) that is
+broken by a failure, as in the above example.
+
+Torus Topolgy Discovery:
+
+The algorithm used by torus-2QoS to construct the torus topology from the
+undirected graph representing the fabric requires that the radix of each
+dimension be configured via torus-2QoS.conf. It also requires that the
+torus topology be "seeded"; for a 3D torus this requires configuring four
+switches that define the three coordinate directions of the torus.
+
+Given this starting information, the algorithm is to examine the cube
+formed by the eight switch locations bounded by the corners (x,y,z) and
+(x+1,y+1,z+1).  Based on switches already placed into the torus topology at
+some of these locations, the algorithm examines 4-loops of interswitch
+links to find the one that is consistent with a face of the cube of switch
+locations, and adds its swiches to the discovered topology in the correct
+locations.
+
+Because the algorithm is based on examining the topology of 4-loops of links,
+a torus with one or more radix-4 dimensions requires extra initial seed
+configuration.  See torus-2QoS.conf(5) for details. Torus-2QoS will detect
+and report when it has insufficient configuration for a torus with radix-4
+dimensions.
+
+In the event the torus is significantly degraded, i.e., there are many
+missing switches or links, it may happen that torus-2QoS is unable to place
+into the torus some switches and/or links that were discovered in the
+fabric, and will generate a warning in that case.  A similar condition
+occurs if torus-2QoS is misconfigured, i.e., the radix of a torus dimension
+as configured does not match the radix of that torus dimension as wired,
+and many switches/links in the fabric will not be placed into the torus.
+
+Quality Of Service Configuration:
+
+OpenSM will not program switchs and channel adapters with SL2VL maps or VL
+arbitration configuration unless it is invoked with -Q.  Since torus-2QoS
+depends on such functionality for correct operation, always invoke OpenSM
+with -Q when torus-2QoS is in the list of routing engines.
+
+Any quality of service configuration method supported by OpenSM will work
+with torus-2QoS, subject to the following limitations and considerations.
+
+For all routing engines supported by OpenSM except torus-2QoS, there is a
+one-to-one correspondence between QoS level and SL. Torus-2QoS can only
+support two quality of service levels, so only the high-order bit of any SL
+value used for unicast QoS configuration will be honored by torus-2QoS.
+
+For multicast QoS configuration, only SL values 0 and 8 should be used with
+torus-2QoS.
+
+Since SL to VL map configuration must be under the complete control of
+torus-2QoS, any configuration via qos_sl2vl, qos_swe_sl2vl, etc., must and
+will be ignored, and a warning will be generated.
+
+Torus-2QoS uses VL values 0-3 to implement one of its supported QoS levels,
+and VL values 4-7 to implement the other.  Hard-to-diagnose application
+issues may arise if traffic is not delivered fairly across each of these
+two VL ranges. Torus-2QoS will detect and warn if VL arbitration is
+configured unfairly across VLs in the range 0-3, and also in the range
+4-7. Note that the default OpenSM VL arbitration configuration does not
+meet this constraint, so all torus-2QoS users should configure VL
+arbitration via qos_vlarb_high, qos_vlarb_low, etc.
+
+Operational Considerations:
+
+Any routing algorithm for a torus IB fabric must employ path SL values to
+avoid credit loops. As a result, all applications run over such fabrics
+must perform a path record query to obtain the correct path SL for
+connection setup. Applications that use rdma_cm for connection setup will
+automatically meet this requirement.
+
+If a change in fabric topology causes changes in path SL values required to
+route without credit loops, in general all applications would need to
+repath to avoid message deadlock. Since torus-2QoS has the ability to
+reroute after a single switch failure without changing path SL values,
+repathing by running applications is not required when the fabric is routed
+with torus-2QoS.
+
+Torus-2QoS can provide unchanging path SL values in the presence of subnet
+manager failover provided that all OpenSM instances have the same idea of
+dateline location. See torus-2QoS.conf(5) for details.
+
+Torus-2QoS will detect configurations of failed switches and links that
+prevent routing that is free of credit loops, and will log warnings and
+refuse to route. If "no_fallback" was configured in the list of OpenSM
+routing engines, then no other routing engine will attempt to route the
+fabric. In that case all paths that do not transit the failed components
+will continue to work, and the subset of paths that are still operational
+will continue to remain free of credit loops. OpenSM will continue to
+attempt to route the fabric after every sweep interval, and after any
+change (such as a link up) in the fabric topology. When the fabric
+components are repaired, full functionality will be restored.
+
+In the event OpenSM was configured to allow some other engine to route the
+fabric if torus-2QoS fails, then credit loops and message deadlock are
+likely if torus-2QoS had previously routed the fabric successfully. Even if
+the other engine is capable of routing a torus without credit loops,
+applications that built connections with path SL values granted under
+torus-2QoS will likely experience message deadlock under routing generated
+by a different engine, unless they repath.
+
+To verify that a torus fabric is routed free of credit loops, use ibdmchk
+to analyze data collected via ibdiagnet -vlr.
+
+DFSSSP and SSSP Routing Algorithm
+---------------------------------
+
+The (Deadlock-Free) Single-Source-Shortest-Path routing algorithm is
+designed to optimize link utilization thru global balancing of routes,
+while supporting arbitrary topologies. The DFSSSP routing algorithm
+uses Infiniband virtual lanes (SL) to provide deadlock-freedom.
+
+The DFSSSP algorithm consists of five major steps:
+1) It discovers the subnet and models the subnet as a directed
+   multigraph in which each node represents a node of the physical
+   network and each edge represents one direction of the full-duplex
+   links used to connect the nodes.
+2) A loop, which iterates over all CA and switches of the subnet, will
+   perform three steps to generate the linear forwarding tables for
+   each switch:
+2.1) use Dijkstra's algorithm to find the shortest path from all nodes
+     to the current selected destination;
+2.2) update the egde weights in the graph, i.e. add the number of
+     routes, which use a link to reach the destination, to the link/edge;
+2.3) update the LFT of each switch with the outgoing port which was used
+     in the current step to route the traffic to the destination node.
+3) After the number of available virtual lanes or layers in the subnet
+   is detected and a channel dependency graph is initialized for each layer,
+   the algorithm will put each possible route of the subnet into the first
+   layer.
+4) A loop iterates over all channel dependency graphs (CDG) and performs
+   the following substeps:
+4.1) search for a cycle in the current CDG;
+4.2) when a cycle is found, i.e. a possible deadlock is present,
+     one edge is selected and all routes, which induced this egde, are moved
+     to the "next higher" virtual layer (CDG[i+1]);
+4.3) the cycle search is continued until all cycles are broken and
+     routes are moved "up".
+5) When the number of needed layers does not exceeds the number of
+   available SL/VL to remove all cycles in all CDGs, the rounting is
+   deadlock-free and an relation table is generated, which contains
+   the assignment of routes from source to destination to a SL
+
+Note on SSSP:
+This algorithm does not perform the steps 3)-5) and can not be
+considered to be deadlock-free for all topologies. But on the one
+hand, you can choose this algorithm for really large networks
+(5,000+ CAs and deadlock-free by design) to reduce
+the runtime of the algorithm. On the other hand, you might use
+the SSSP routing algorithm as an alternative, when all deadlock-free
+routing algorithms fail to route the network for whatever reason.
+In the last case, SSSP was designed to deliver an equal or higher
+bandwidth due to better congestion avoidance than the Min Hop
+routing algorithm.
+
+Notes for usage:
+  a) running DFSSSP: '-R dfsssp -Q'
+    a.1) QoS has to be configured to equally spread the load on the
+         available SL or virtual lanes
+    a.2) applications must perform a path record query to get path SL for
+         each route, which the application will use to transmite packages
+  b) running SSSP:   '-R sssp'
+  c) both algorithms support LMC > 0
+
+For more information about the algorithms, i.e. balancing the routes and
+moving the routes to different virtual layers, and about comparison with
+other routing algorithms, please refer to the following articles:
+1. J. Domke, T. Hoefler and W. Nagel: Deadlock-Free Oblivious Routing
+   for Arbitrary Topologies, In Proceedings of the 25th IEEE International
+   Parallel & Distributed Processing Symposium (IPDPS 2011)
+2. T. Hoefler, T. Schneider and A. Lumsdaine: Optimized Routing for
+   Large-Scale InfiniBand Networks, In 17th Annual IEEE Symposium on High
+   Performance Interconnects (HOTI 2009)

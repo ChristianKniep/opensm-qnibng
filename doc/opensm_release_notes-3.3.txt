@@ -1,0 +1,1164 @@
+                        OpenSM Release Notes 3.3
+                       =============================
+
+Version: OpenSM 3.3.x
+Repo:    git://git.openfabrics.org/~alexnetes/opensm.git
+Date:    Aug 2012
+
+1 Overview
+----------
+This document describes the contents of the OpenSM 3.3 release.
+OpenSM is an InfiniBand compliant Subnet Manager and Administration,
+and runs on top of OpenIB. The OpenSM version for this release
+is opensm-3.3.15.
+
+This document includes the following sections:
+1 This Overview section (describing new features and software
+  dependencies)
+2 Known Issues And Limitations
+3 Unsupported IB compliance statements
+4 Bug Fixes
+5 Main Verification Flows
+6 Qualified Software Stacks and Devices
+
+1.1 Major New Features
+
+* Mesh Analysis for LASH routing algorithm.
+  The performance of LASH can be improved by preconditioning the mesh in
+  cases where there are multiple links connecting switches and also in
+  cases where the switches are not cabled consistently.
+  Activated with --do_mesh_analysis command line and config file option.
+
+* Reloadable OpenSM configuration (preliminary implemented)
+  This is possible now to reload OpenSM configuration parameters on the
+  fly without restarting.
+
+* Routing paths sorted balancing (for UpDown and MinHops)
+  This sorts the port order in which routing paths balancing is performed
+  by OpenSM. Helps to improve performance dramatically (40-50%) for most
+  popular application communication patterns.
+  To overwrite this behavior use --guid_routing_order_file command line
+  option.
+
+* Weighted Lid Matrices calculation (for UpDown, MinHop and DOR).
+  This low level routing fine-tuning feature provides the means to
+  define a weighting factor per port for customizing the least weight
+  hops for the routing. Custom weights are provided using file specified
+  with '--hop_weights_file' command line option.
+
+* I/O nodes connectivity (for FatTree).
+  This provides possibility to define the set of I/O nodes for the
+  Fat-Tree routing algorithm. I/O nodes are non-CN nodes allowed to use
+  up to N (specified using --max_reverse_hops) switches the wrong way
+  around to improve connectivity. I/O nodes list is provided using file
+  and --io_guid_file command line option.
+
+* MGID to MLID compression - infrastructure for many MGIDs to single MLID
+  compression. This becomes helpful when number of multicast groups
+  exceeds subnet's MLID routing capability (normally 1024 groups). In such
+  cases many multicast groups (MGID) can be routed using same MLID value.
+
+* Torus-2QoS unicast routing algorithm - a DOR-based routing algorithm
+  specialized for 2D/3D torus topologies. Torus-2QoS provides deadlock-free
+  routing while supporting two quality of service (QoS) levels. In addition
+  it is able to route around multiple failed fabric links or a single failed
+  fabric switch without introducing deadlocks, and without changing path SL
+  values granted before the failure.
+
+* DNUP Unicast routing algorithm - similar to UPDN but allows routing in
+  fabrics which have some CA nodes attached closer to the roots than some
+  switch nodes.
+
+* SSSP Unicast routing algorithm - SSSP unicast routing algorithm - a
+  single-source-shortest-path routing algorithm, which globally balances the
+  number of routes per link to optimize link utilization. This routing
+  algorithm has no restrictions in terms of the underlying topology.
+
+* DFSSSP unicast routing algorithm - a deadlock-free single-source-
+  shortest-path routing, which uses the SSSP algorithm as the base to optimize
+  link utilization and uses Infiniband virtual lanes (SL) to provide deadlock-
+  freedom.
+
+* SRIOV (Alias GUID) Support - In order to support virtualized environments,
+  alias GUID support is added to OpenSM. This support allows an SA client to
+  add and remove additional port GUIDs based on SubAdmSet/SubAdmDelete of
+  GUIDInfoRecord.
+
+* Extended speed support
+  This provides support for FDR and EDR speeds.
+
+* Congestion control support
+
+* Many code improvements, optimizations and cleanups.
+
+* Windows support (early stage).
+
+1.2 Minor New Features:
+
+7e6bdef opensm/man/opensm.8.in: Add section for MKey support
+aebe678 opensm: Add support for multicast service records
+5509234 opensm/scripts/sldd.sh: Update to support guid2mkey/neighbors
+2ae1477 opensm: Ensure sweep interval/mkey lease are sensibly set
+cefe79b opensm: Check for valid mkey protection level in config file
+8fa0d2c opensm: Add neighboring link cache file
+5088d08 opensm: Log errors on SubnGet timeouts
+9eed9c6 opensm: Add support for setting mkey protection levels
+5c4157d opensm: Add locking where necessary around osm_req_*
+2f74f34 opensm: Allow recovery of subnets with misset mkeys
+e5dc557 opensm: Add guid2mkey cache file support
+3659b37 opensm/osm_sa_class_port_info.c: Indicate support for PortInfo CapMask2
+	matching in SA ClassPortInfo:CapabilityMask2
+8016d3b opensm/osm_base.h: Add some SA ClassPortInfo CapabilityMask2 bits
+1a31c44 opensm/osm_perfmgr.c: Use non conflicting error codes in log messages
+03a75d0 opensm/osm_sa_path_record.c: Restore osm_get_path_params functionality
+a9340cf opensm: Support (null) being specified for per_module_logging_file
+	option
+00375aa opensm/osm_perfmgr.c: Eliminate compile warning
+7868c98 opensm: Remove unused per_module_logging option
+49c460b Call drop manager before checking for other Master SM in the fabric
+c0604f3 Increase p_port->discovery_count only when received PortInfo for port 0
+	of the switch
+24b30d2 opensm/osm_node_info_rcv.c: Handle non-compliant SMA gracefully
+a4f2689 opensm/osm_vendor_ibumad: Add management class into match criteria
+4be6375 opensm/osm_sa*.c: Log requester port GUID at DEBUG level
+4cca51d opensm/osm_sa_mcmember_record.c: Log requester port GUID at DEBUG level
+15b3eae opensm/osm_sa_path_record.c: Log requester port GUID at DEBUG level
+0b580ca opensm/osm_sa_path_record.c: Add debug logging to
+	pr_match_mgrp_attributes
+ed4b7fb opensm/osm_sa_mcmember_record.c: In mcmr_rcv_join_mgrp, add MGID to log
+	message
+872dae4 opensm/osm_sa_mcmember_record.c: Dump MCMemberRecord in mcmr_query_mgrp
+71f2ce7 Sending SL2VL and VLARB SET MADs in distributed manner
+f07bcc1 opensm/osm_subnet.c: Cosmetic formatting change
+c823a5b opensm/osm_link_mgr.c: Set PortInfo:PortState to LinkDown when remote
+	port isn't accessible
+ab88df6 Add support to reread configuration file when stacked in rediscovery
+	loop.
+67c9bae opensm: Move per_mod_log_tbl array from subn to log structure
+2cbd9f5 opensm/cl_atomic_osd.h: Cosmetic formatting change
+cd63dec opensm/osm_helper.c: Add CapabilityMask2 to notice dump for trap 144
+9205812 opensm/ib_types.h: Add CapabilityMask2 to notice for trap 144
+25de706 opensm/osm_sa_path_record.c: Add missing end-of-line in the log message
+3551530 opensm/osm_trap_rcv.c: Remove vestigial comment
+067d217 opensm/osm_inform.c: Make log message format consistent for error
+	messages
+759b82a opensm/osm_trap_rcv.c: Add better logging for traps 257 and 258
+b806657 opensm/osm_sa_mad_ctrl.c: Eliminate commented out code line
+a851693 opensm/perfmgr: add logging of error counters
+52fa659 opensm/console: add perfmgr "print_errors" (pe) console command.
+a832ce2 opensm/console: Add human readable output for perfmgr data counters
+77a1756 opensm/console: add abreviations for perfmgr commands
+aca9a07 opensm/console; add port option to perfmgr print_counters
+00628cc opensm/console: add "print all" to print_counters console command
+f5de9b5 opensm: perfmgr mark inactive nodes in perfmgr db
+ff06340 opensm: perfmgr delete "inactive" nodes from the DB
+059d8f4 opensm/console: protect against 0 entered for the perfmgr sweep_time
+cc86607 opensm/perfmgr: Add config option to ignore Channel Adapters.
+91f0c00 opensm/osm_node_info_rcv.c: In ni_rcv_process_existing_ca_or_router,
+	handle error
+c930a23 opensm/osm_subnet.c: Indicate lmc and lmc_esp0 are not changeable
+	"on the fly"
+7825e67 opensm/libopensm.map: Removed unimplemented routine
+7de7b04 opensm/main.c: Handle daemon mode with guid specified as 0 more
+	gracefully
+9478fbf opensm/osm_subnet.c: Support MLNX ExtendedPortInfo for ConnectIB device
+f8fc334 opensm/osm_node_info_rec.c: Also handle non compliant SMA in
+	ni_rcv_process_existing
+b4a481d opensm: Eliminate unneeded field in DR path structure
+01bc8c9 opensm/osm_state_mgr.c: Force subn->need_update when coming out of
+	STANDBY
+276be8b opensm: Dump info functions update for per module logging
+64b512a opensm/osm_vendor_ibumad.c: Make binding log message clearer
+e70c8c1 opensm: Add enum for FILE_ID for per module logging
+2a2db8c opensm: Add per module logging support
+e21b106 opensm: Cosmetic changes
+3ddb2e3 opensm: Add partition manager configuration doc to docs
+9586649 opensm/opensm_release_notes-3.3.txt: Update Unsupported IB Compliance
+	Statements
+826b5c4 opensm/osm_ucast_dfsssp.c: Use osm_log_is_active
+b2cad9d opensm/complib/cl_fleximap.h: Cosmetic changes
+322a310 opensm/osm_ucast_ftree.c: Add a couple of asserts
+e3a946d opensm: Add FDR10 support
+6cea3df opensm/osm_sa_portinfo_record.c: Add SA PortInfoRecord support
+	for CapabilityMask2 matching
+9ac7eeb opensm: Add infrastructure support for CapabilityMask2 field in
+	PortInfo
+8bc7c30 opensm: make loopback console compile on by default.
+566b462 opensm/ib_types.h: Update SA PortInfoRecord component masks
+480de4a opensm: Use forward extensible and safer way to compare mkey_lmc
+	field in PortInfo attribute
+22ca966 opensm: enable perfmgr build by default
+4250c59 opensm: perfmgr only run sweep timer when enabled
+1810672 Support scatter ports
+dd21107 Support port shifting
+1c2a298 OpenSM torus routing order list
+b92d21f opensm: Create all directories in database path on Windows
+83b6752 opensm/osm_subnet.c: In osm_subn_destroy, delete service records
+0fc8124 opensm: Add OSM_VENDOR_ID_OPENIB support
+c0d8b56 opensm/osm_sa_node_record.c: In nr_rcv_create_nr, only set some
+	variables when needed
+9acaba0 opensm/osm_helper.c: Add some missing fields to
+	osm_dump_portinfo_record
+8a43aea Allow comma in plugin names parsing
+cdf227c opensm: Proper mfttop initialization when starting/restarting
+cde0c0d opensm: Convert remaining helper routines for GID printing format
+bc5743c opensm: Add support for MaxCreditHint and LinkRoundTripLatency to
+	osm_dump_port_info
+6cd34ab opensm: Add Dell to known vendor list
+003d6bd opensm: Add more info for traps 144 and 256-259 in osm_dump_notice
+5b0c5de opensm/osm_ucat_ftree.c Enhance min hops counters usage
+0715b92 ib_types.h: Add ib_switch_info_get_state_opt_sl2vlmapping routine
+2ddba79 opensm: Remove some __ and __osm_ prefixes
+ea0691f opensm/iba/ib_types.h: Add PortXmit/RcvDataSL PerfMgt attributes
+9c79be5 ib_types.h: Adding BKEY violation trap (259)
+c608ea6 opensm: Add and utilize ib_gid_is_notzero routine
+b639e64 opensm: Handle trap repress on trap 144 generation
+b034205 Add pkey table support to osm_get_all_port_attr
+876605b opensm/ib_types.h: Add attribute ID for PortCountersExtended
+aae3bbc opensm: PortInfo requests for discovered switches
+0147b09 opensm/osm_lid_mgr: use single array for used_lids
+a9225b0 opensm/Makefile.am: remove osm_build_id.h junk file generation
+8e3a57d opensm/osm_console.c: Add list of SMs to status command
+3d664b9 opensm/osm_console.c : Added dump_portguid function to console to
+	generate a list of port guids matching one or more regexps
+85b35bc opensm/osm_helper.c: print port number as decimal
+8674cb7 opensm: sort port order for routing by switch loads
+80c0d48 opensm: rescan config file even in standby
+8b7aa5e opensm/osm_subnet.c enable log_max_size opt update
+8558ee5 opensm/include/iba/ib_types.h: Add xmit_wait for PortCounters
+ecde2f7 opensm/osm_subnet.c support subnet configuration rescan and update
+58c45e4 opensm/osm_log.c save log_max_size in subnet opt in MB
+cf88e93 opensm: Add new partition keyword for all hca, switches and routers
+4bfd4e0 opensm: remove libibcommon build dependencies
+3718fc4 opensm/event_plugin: link opensm with -rdynamic flag
+587ce14 opensm/osm_inform.c report IB traps to plugin
+ced5a6e opensm/opensm/osm_console.c: move reporting of plugins to "status"
+	command.
+696aca2 opensm: Add configurable retries for transactions
+0d932ff opensm/osm_sa_mcmember_record.c: optimization in zero mgid comparison
+254c2ef opensm/osm_sm_mad_ctrl.c: In sm_mad_ctrl_send_err_cb, set init
+	failure on PKeyTable and QoS initialization failure
+83bd10a opensm: Reduce heap consumption by multicast routing tables (MFTs)
+cd33bc5 opensm: Add some additional HP vendor IDs/OUIs
+f78ec3a opensm/osm_mcast_tbl.(h c): Make max_mlid_ho be maximum MLID configured
+2d13530 opensm: Add infrastructure support for PortInfo
+	IsMulticastPkeyTrapSuppressionSupported
+3ace760 opensm: Reduce heap consumption by unicast routing tables (LFTs)
+eec568e osmtest: Add SA get PathRecord stress test
+aabc476 opensm: Add infrastructure support for more newly allocated PortInfo
+	CapabilityMask bits
+c83c331 opensm: improve multicast re-routing requests processing
+46db92f opensm: Parallelize (Stripe) MFT sets across switches
+00c6a6e opensm: Parallelize (Stripe) LFT sets across switches
+e21c651 opensm/osm_base.h: Add new SA ClassPortInfo:CapabilityMask2 bit
+	allocations
+09056b1 opensm/ib_types.h: Add CounterSelect2 field to PortCounters attribute
+6a63003 opensm: Add ability to configure SMSL
+25f071f opensm/lash: Set minimum VL for LASH to use
+622d853 opensm/osm_ucast_ftree.cd: Added support for same level links
+8146ba7 opensm: Add new Sun vendor ID
+1d7dd18 opensm/osm_ucast_ftree.c: Enhanced Fat-Tree algorithm
+e07a2f1 Add LMC support to DOR routing
+1acfe8a opensm: Add SuperMicro to list of recognized vendors
+f02f40e opensm: implement 'connect_roots' option in fat-tree routing
+748d41e opensm SA DB dump/restore: added option to dump SA DB on every sweep
+b03a95e complib/cl_fleximap: add cl_fmap_match() function
+b7a8a87 opensm/include/iba/ib_types.h: adding Congestion Control definitions
+fa356f8 opensm: Add support for optimized SLtoVLMappingTable programming
+8aaae91 Dimension port order file support
+7662eec opensm: Add option to specify prefix to syslog messages
+2382cf3 opensm: Add update_desc command to opensm console
+7cbe193 opensm: toggle sweeping V3
+6f61d8f opensm/osmeventplugin: added new events to monitor SM
+84cf603 opensm/main.c: force stdout to be line-buffered
+b3bb0ab opensm/osm_dump.c: Dump SL2VL tables if routing engine might have
+	modified them
+8a08719 opensm/osm_dump.c: dump SL2VL tables in debug verbosity level when
+	QoS is on
+fc908c9 opensm/osm_sa_multipath_record.c: Add mtu validation if supplied
+687e1f8 opensm/osm_sa_mcmember_record.c: Add mtu validation if supplied
+76f5b09 opensm/osm_sa_path_record.c: Add mtu validation if supplied
+9f38fae opensm/osm_helper: Add ib_mtu_is_valid
+655230b opensm/osm_sa_multipath_record.c: Add rate validation if supplied
+cb1484d opensm/osm_sa_mcmember_record.c: Add rate validation if supplied
+485d068 opensm/osm_sa_path_record.c: Add rate validation if supplied
+300f4d9 opensm/osm_helper: Add ib_rate_is_valid
+9b50961 opensm: Change osm_routing_engine struct to not use C++ reserved word
+c9c0aa6 opensm/man/torus-2QoS.conf.5.in: Update portgroup_max_ports section
+3c97f06 opensm: Add the precreation of multicast groups
+a9b9f09 opensm/osm_sminfo_rcv.c: Handle SMP status
+1190c15 opensm/osm_switch.c: In osm_switch_set_hops, return, error when port_num is invalid
+3d149db Changed sl_path API to include slid and dlid only
+6cfb0eb Optimized and deadlock-free routing algorithm for InfiniBand
+45f93ec opensm: Add additional IBM vendor ID/OUI
+c386eb2 opensm/osm_state_mgr.c: Cosmetic change to log message
+703e596 opensm: Add support for partition enforcement types to accomodate IBA extended link speeds
+a2a03a8 Check block_num validity in set_guidinfo() and del_guidinfo() requests
+e6ec61f end error resoponse to invalid LID in GUIDInfo request
+7fce500 opensm/Makefile.am: Add doc/opensm-sriov.txt to docs
+264aeb1 opensm: Add documentation for SRIOV support
+c639832 opensm: Enhance osm_physp_share_this_pkey for allow_both_pkeys policy
+b17b63c opensm: When allowing both pkeys, on a switch external, (peer) port eliminate limited pkey when full pkey with same base is present
+a758da2 opensm: Add command line option for allow_both_pkeys
+f412de3 opensm: Update partition documentation and man page for (allowing) both (limited and full) memberships in the same partition
+726ce6a Support allowing both full and limited members of same partition
+4ccf32f opensm/PKeyMgr: Support pkey index reuse when there are no longer any previously unused indices available
+eb375a6 opensm/osm_pkey_mgr.c: Detect pkey table overflow in pkey_mgr_update_port
+411e742 opensm/PkeyMgr: Don't change end port pkey index when simultaneously adding and removing partitions
+15e7223 opensm/osm_sa_guidinfo_record.c: In set_guidinfo, better SM reassigned guid handing
+e79b725 opensm: Handle SubnSet GUIDInfo asynchronously from GUIDInfoRecord handling
+96c741d opensm: Some cosmetic formatting changes
+1d5e370 opensm/osm_sa_guidinfo_record.c: Better status for SA response
+efd3ba2 opensm/osm_sa.c: Change log level of message
+db8b7da opensm/osm_sa_service_record.c: Alias GUID support
+5330986 opensm/osm_sa_multipath_record.c: Add support for alias GUIDs
+44168c9 opensm/osm_sa_guidinfo_record.c: In del_guidinfo, validate guid not in use
+63eb65b opensm: Add multicast support for alias GUIDs
+700d15f opensm/osm_sa_path_record.c: Add support for alias GUIDs
+f818387 opensm/osm_sa_guidinfo_record.c: Use OSM_VENDOR_ID_OPENIB define rather than IB_OPENIB_OUI
+97e360e opensm: Dump/load SA GUIDInfoRecords
+fe74f1d opensm: Make SA assigned guids persistent across port down/up events
+eb8f1d9 opensm: Add support for alias GUIDs
+b3b1861 opensm: osm_subnet.c: Updated patch to add error-reporting to the parsing of opensm.conf
+cd8a708 opensm/man/opensm.8.in: Add description for OSM_LOG_SYS logging flag
+1308e5c opensm/osm_console.c: Add display of FDR10 ports to portstatus_parse
+f4722b0 opensm: Reset client reregistration when receiving handover
+
+1.3 Library API Changes
+
+  None
+
+1.4 Software Dependencies
+
+OpenSM depends on the installation of libibumad package (distributed as
+part of OFA IB management together with OpenSM) and IB stack presence,
+in particular libibumad uses user_mad kernel interface ('ib_umad' kernel
+module). The qualified driver versions are provided in Table 2,
+"Qualified IB Stacks".
+
+Also, building of QoS manager policy file parser requires flex, and either
+bison or byacc installed.
+
+1.5 Supported Devices Firmware
+
+The main task of OpenSM is to initialize InfiniBand devices. The
+qualified devices and their corresponding firmware versions
+are listed in Table 3.
+
+2 Known Issues And Limitations
+------------------------------
+
+* No Service / Key associations:
+  There is no way to manage Service access by Keys.
+
+* No SM to SM SMDB synchronization:
+  Puts the burden of re-registering services, multicast groups, and
+  inform-info on the client application (or IB access layer core).
+
+3 Unsupported IB Compliance Statements
+--------------------------------------
+The following section lists all the IB compliance statements which
+OpenSM does not support. Please refer to the IB specification for detailed
+information regarding each compliance statement.
+
+* C14-22 (Authentication):
+  M_Key M_KeyProtectBits and M_KeyLeasePeriod shall be set in one
+  SubnSet method. As a work-around, an OpenSM option is provided for
+  defining the protect bits.
+
+* C14-67 (Authentication):
+  On SubnGet(SMInfo) and SubnSet(SMInfo) - if M_Key is not zero then
+  the SM shall generate a SubnGetResp if the M_Key matches, or
+  silently drop the packet if M_Key does not match.
+
+* C15-0.1.23.4 (Authentication):
+  InformInfoRecords shall always be provided with the QPN set to 0,
+  except for the case of a trusted request, in which case the actual
+  subscriber QPN shall be returned.
+
+* o13-17.1.2 (Event-FWD):
+  If no permission to forward, the subscription should be removed and
+  no further forwarding should occur.
+
+* C14-44 (Initialization):
+  If the SM discovers that it is missing an M_Key to update CA/RT/SW,
+  it should notify the higher level.
+
+* C14-62.1.1.12 (Initialization):
+  PortInfo:M_Key - Set the M_Key to a node based random value.
+
+* C14-62.1.1.13 (Initialization):
+  PortInfo:M_KeyProtectBits - set according to an optional policy.
+
+* C14-62.1.1.24 (Initialization):
+  SwitchInfo:DefaultPort - should be configured for random FDB.
+
+* C14-62.1.1.32 (Initialization):
+  RandomForwardingTable should be configured.
+
+* o15-0.1.12 (Multicast):
+  If the JoinState is SendOnlyNonMember = 1 (only), then the endport
+  should join as sender only.
+
+* o15-0.1.8 (Multicast):
+  If a request for creating an MCG with fields that cannot be met,
+  return ERR_REQ_INVALID (currently ignores SL and FlowLabelTClass).
+
+* C15-0.1.8.6 (SA-Query):
+  Respond to SubnAdmGetTraceTable - this is an optional attribute.
+
+* C15-0.1.13 Services:
+  Reject ServiceRecord create, modify or delete if the given
+  ServiceP_Key does not match the one included in the ServiceGID port
+  and the port that sent the request.
+
+* C15-0.1.14 (Services):
+  Provide means to associate service name and ServiceKeys.
+
+4 Bug Fixes
+-----------
+
+4.1 Major Bug Fixes
+
+a322f51 Skip TID 0 on 32 bit wraparound for SMP, SA and PerfMgt queries
+cded9af Fix transaction id casting
+3585f8b opensm: Fix crash found with ucast cache
+74e12d9 opensm: fix part_enforce parameter parsing crash
+647a98e Fixed crash in sm_state_mgr_send_master_sm_info_req() during fabric
+	merge
+63ebd0d Fix crash in ucast cache when chain of switches connected back at once
+	to the fabric
+3b21d6f Fix crash in ucast cache when ucast cache invalidates after updating
+	one of the switches
+5654e22 Fix invalid error check, which lead to segfault
+7bf7482 fix segfault corner case w/ updn routing and LMC > 0
+18990fa opensm: set IS_SM bit during opensm init
+3551389 fix local port smlid in osm_send_trap144()
+a6de48d opensm/osm_link_mgr.c initialize SMSL
+82df467 opensm/osm_req.c: Shouldn't reveal port's MKey on Trap method
+45ebff9 opensm/osm_console_io.h: Modify osm_console_exit so only the
+	connection is killed, not the socket
+d10660a opensm/osm_req.c: In osm_send_trap144, set producer type according
+	to node type
+8a2d2dd opensm/osm_node_info_rcv.c: create physp for the newly discovered
+	port of the known node
+39b241f opensm/lid_mgr: fix duplicated lid assignment
+b44c398 opensm: invalidate routing cache when entering master state
+595f2e3 opensm: update LFTs when entering master
+8406c65 opensm: fix port chooser
+fa90512 opensm/osm_vendor_*_sa: fix incompatibility with QLogic SM
+7ec9f7c opensm: discard multicast SA PR with wildcard DGID
+5cdb53f opensm/osm_sa_node_record.c use comp mask to match by LID or GUID
+55f9772 opensm: Return single PathRecord for SubnAdmGet with DGID/SGID wild
+	carded
+5ec0b5f opensm: compress IPV6 SNM groups to use a single MLID
+26e7e83 opensm/osm_lid_mgr: fix couple of duplicate LIDs bugs
+fedc419 opensm: Multicast root switch calculation
+6772fdb opensm: Fix sl2vl configuration
+dd3470f complib/cl_timer.c: fixing cl_timer calculation
+ae1bcdd opensm/osm_lid_mgr.c: Allow switch lids to be non LMC aligned
+593547e Wrong handling of MC create and delete traps
+4c822b0 opensm/osm_prtn.c: removing TopSpin hack
+8214e2a opensm: Add support for SwitchInfo:MulticastFDBTop
+1e544ba opensm: fixed memory leak in multicast spanning tree calculation
+0456b3f Fixed multicast groups reconfiguration during heawy sweep
+9ad844f Fix ucast cache crash, when switch doesn't have valid phys ports
+07aa9fa opensm: fix crash in osm_ucast_mgr
+076bd38 opensm/osm_ucast_cache.c: fix crash in ucast cache when switch with lid 0 dropped
+
+4.2 Other Bug Fixes
+
+740c22b opensm/include/opensm/osm_log.h: Fix commentary cut 'n paste error
+13ebee4 opensm/osm_subnet.c: Fixed ftree/updn configuration failure when
+	root_guid_file points to non-existing file
+8a9d267 opensm: fix locking in osm_guid_mgr_process
+4d682bb opensm: Fix pthread_create() return value checks
+63c6609 opensm/osm_port.h: Fix commentary typo
+3e4e00b opensm/osmtest: fix osmtest ignores timeout parameter
+68b1d92 opensm: perfmgr fix dump_counters
+9d16039 opensm/perfmgr: fix endian conversion of PortCounters
+324f269 opensm/osm_sa_inform_info.c: Fix some error log messages
+1d5213a opensm/osm_madw.h: Fix a couple of cut 'n paste commentary errors
+3fc662d opensm/torus-2QoS: Fix some typos in documentation
+048c66e Fixed Multicast precreation parsing
+086d611 Fixes in SL2VL table distribution algorithm
+7d9f0c9 Fix deadlock between sminfo_set_req() and osm_sm_state_mgr()
+69741e6 Fix base port0 sl2vl mapping optimization
+bcda38e Fix SL2VL configuration
+7e39542 Fix pre-creation of MC group with MGID containing P_Key
+20e1a46 opensm/osm_congestion_control.c: Fix initialization hex string
+a59072d opensm/osm_congestion_control.c: Skip TID 0 on 32 bit wraparound
+7d18662 osmtest/osmtest.c: Fix permission
+e7d4574 opensm/perfmgr: update new error codes to '54' prefix
+e17dae6 opensm/osm_sa_portinfo_record.c: In pir_rcv_new_pir, fix switch port 0 physp
+93b2f56 libvendor/osm_vendor_ibumad.c: fix unused-but-set warning
+cda58af fixed unsused-but-set warning for DEBUG variables
+e881d0e opensm/osmtest/osmt_multicast.: Fix typo in log message
+203f3c6 opensm/osm_switch.c: Fix compile warnings
+67c2538 opensm/man/opensm.8.in: Fix some typos
+7338efc opensm/osmtest/osmtest.c: Fix endian in some log messages
+67063ca opensm/libvendor: Fix compile warnings on 64 bit machines when building --with-osmv=sim
+a8c209c opensm: fixed port order configuration in torus routing engine
+7359cfc opensm/osm_ucast_mgr.c: Fix some issues found by Coverity
+0150ab9 opensm/osm_ucast_ftree.c: Fix some issues found by Coverity
+267a08f opensm/osm_pkey_mgr.c: Fix cast
+12f772d opensm: Fix some OSM_SIGNAL and OSM_SM_SIGNAL numbering
+c29c4f1 opensm/osm_sa_service_record.c: Fix minor memory leak
+f936f8b opensm: fix strtoull error handling
+0292ae2 opensm: fixed segfault when enable qos on fabric with no switches
+619fa64 osmtest/osmt_multicast.c: Fixed another insufficient component case
+1618803 opensm/osm_sa.c: Fix commentary typo
+c98fec9 opensm/osm_subnet.c: Fix description of max_msg_fifo_timeout
+0a3839f osmtest/osmtest.c: Fix trap flow not implemented log message
+f08479a opensm/osm_base.h: Fix a commentary typo
+ae966f6 osmtest/osmt_multicast.c: Fix some typos
+8a3b5b9 osmtest/osmt_multicast.c: Fixed some error codes in OSM_LOG messages
+c90953d osmtest/osmt_multicast.c: Fixed a couple of typos in OSM_LOG messages
+f7f1ead opensm/osm_sa_mcmember_record.c: Fix handling of invalid PKey
+65d3e4f opensm/osm_pkey_mgr.c: Fix commentary typo
+34d61cc opensm/perfmgr: fix overflow processing
+77d79b4 opensm: fixed potential null variable dereferencing in libvendor
+350c6e4 opensm: fixed potential memory leak in osm_ucast_ftree()
+e206872 opensm: Fixed debug message in osm_vendor_send()
+1b3e93e opensm: fixed sizeof of pointer allocation in osm_ucast_lash()
+f0b915a Fix SANodeRecord.nodeInfo.localPortNum
+3332658 opensm: fixed memory leak in multicast spanning tree calculation
+e4525b1 opensm: fixed indentation and decreased verbosity of RMPP length message
+10ac4c1 Fix compile warning introduced by patch "fixed getline pointer allocation free in osm_console_io"
+bf23d7c opensm: fixed getline pointer allocation free in osm_console_io
+54b1583 Makefile: ChangeLog and version generation script path fix
+4911e0b performance-manager-HOWTO.txt: Indicate master state
+86ccaa4 opensm/osm_pkey_mgr.c: Fix pkey endian in log message
+b79b079 opensm.8.in: Add mention of backing documentation for QoS policy
+	file and performance manager
+b4d92af opensm/osm_perfmgr.c: Eliminate duplicated error number
+a10b57a opensm/osm_ucast_ftree.c: lids are always handled in host order
+44273a2 opensm/osm_ucast_ftree.c: fixing bug in indexing
+5cd98f7 Fix further bugs around console closure and clean up code.
+6b34339 opensm/osm_opensm.c: add newline to log message
+68c241c send trap144 when local priority is higher than master priority
+6462999 opensm/osm_inform.c: In __osm_send_report, make sure p_report_madw
+	valid before using
+9b8561a opensm/console: Fixed osm_console poll to handle POLLHUP
+91d0700 osm_vendor_ibumad.c: In clear_madw, fix tid endian in message
+5a5136b osm_switch.h : Fixed wrong comment about return value of
+	osm_switch_set_hops
+c1ec8c0 osm_ucast_ftree.c: Removed useless initialization on switch indexes
+418d01f opensm/osm_helper.c: use single buffer in osm_dump_dr_smp()
+2c9153c opensm/osm_helper.c: consolidate dr path printing code
+048c447 opensm/osm_helper.c: return then log is inactive
+dd3ef0c opensm: Return error status when cl_disp_register fails
+0143bf7 opensm/osm_perfmgr.c: Improve assert in osm_pc_rcv_process
+6622504 osm_perfmgr.c: In osm_perfmgr_shutdown, add missing cl_disp_unregister
+7b66dee opensm: remove unneeded anymore physp initializations
+f11274a opensm/partition-config.txt: Update for defmember feature
+d240e7d opensm/osm_sm_state_mgr.c: Remove unneeded return statement
+898fb8c opensm: Improve some snprintf uses
+6820e63 opensm/osm_sa_link_record.c: improve get_base_lid()
+64c8d31 opensm: initialize all switch ports
+555fae8 opensm/sweep: add log message before lid assignment
+8e22307 opensm/console: Enhance perfmgr print_counters for better nodenames
+b9721a1 opensm/osm_console.c: Improve perfmgr print_counters error message
+4d8dc72 opensm/osm_inform.c: Fix sense of zero GID compare in __match_inf_rec
+a98dd82 opensm/main.c: remove enable_stack_dump() call
+db6d51e opensm/osm_subnet: fix crash in qos string config parameters reloading
+e5111c8 opensm: proper config file rescan
+e5295b2 opensm: pre-scan command line for config file option
+e2f549e opensm/osm_console.c: Eliminate some extraneous parentheses
+0a265dc opensm/console: dump_portguid - don't duplicate matched guids
+540fefb opensm/console: dump_portguid command fixes
+d96202c opensm/osm_console.c: Add missing command in help_perfmgr
+ae1bd3c opensm/osm_helper.c: Add port counters to __osm_disp_msg_str
+1d38b31 opensm/osm_ucast_mgr.c: Add error numbers for some OSM_LOG prin
+156c749 opensm: fix structure definition for trap 257-258
+5c09f4a opensm/osm_state_mgr.c: small bug in scanning lid table
+72a2fa2 opensm/osm_sa.c: fixing SA MAD dump
+539a4d3 opensm/osm_ucast_ftree.c Fixed bad init value for down port index
+6690833 opensm/ftree: simplify root guids setup.
+90e3291 opensm/ftree: cleanup ftree_sw_tbl_element_t use
+c07d245 opensm/qos_config: no invalid option message on default values
+b382ad8 opensm: avoid memory leaks on config parameters reloading
+45f57ce opensm/osm_ucast_ftree.c: Fixed bug on index port incrementation
+3d618aa opensm/osm_subnet.c: break matching when config parameter already found
+44d98e3 opensm/osm_subnet.c: clean_val() remove trailing quotation
+173010a opensm/doc/perf-manager-arch.txt: Fix some commentary typos
+83bf6c5 opensm/osm_subnet.c fix parse functions for big endian machines
+6b9a1e9 opensm/PerfMgr: Primarily fix enhanced switch port 0 perf manager
+	operation
+4f79a17 opensm/osm_perfmgr.c: In osm_perfmgr_init, eliminate memory leak
+	on error
+22da81f opensm/osm_ucast_ftree.c: fix full topology dump
+aa25fcb opensm/osm_port_info_rcv.c: don't clear sw->need_update if port 0
+	is active
+003bd4b opensm/osm_subnet.c Fix memory leak for QOS string parameters.
+9cbbab2 opensm/opensm.spec: fix event plugin config options
+996e8f6 OpenSM: update osmeventplugin example for the new TRAP event.
+67f4c07 opensm/lash: simplify some memory allocations
+3e6bcdb opensm/lash: fix memory leaks
+3ff97b9 opensm/vendor: save some stack memory
+ccc7621 opensm/osm_ucast_ftree.c: fixing errors in comments
+1a802b3 Corrected incoherency in __osm_ftree_fabric_route_to_non_cns comments
+85a7e54 opensm/osm_sm.c: fix MC group creation in race condition
+aad1af2 opensm/osm_trap_rcv.c: Improvements in log_trap_info()
+f619d67 opensm/osm_trap_rcv.c: Minor reorganization of trap_rcv_process_request
+084335b opensm/link_mgr: verify port's lid
+d525931 opensm/osm_vendor_ibumad: Use OSM_UMAD_MAX_AGENTS rather than
+	UMAD_CA_MAX_AGENTS
+f342c62 opensm/osm_sa.c: don't ignore failure in osm_mgrp_add_port()
+587fda4 osmtest/osmt_multicast.c: fix strict aliasing breakage warning
+6931f3e opensm: make subnet's max mlid update implementation independent
+30f1acd osm_ucast_ftree.c missing reset of ca_ports
+ac04779 opensm: fix LFT allocation size
+a7838d0 opensm/osm_ucast_cache: reduce OSM_LOG_INFO debug printouts
+c027335 opensm/osm_ucast_updn.c: Further reduction in cas_per_sw allocation
+e8ee292 opensm/opensm/osm_subnet.c: adjust buffer to ensure a '\n' is printed
+84d9830 opensm/osm_ucast_updn.c: Reduce temporary allocation of cas_per_sw
+347ad64 opensm/ib_types.h: Mask off client rereg bit in set_client_rereg
+c2ab189 opensm/osm_state_mgr.c: in cleanup_switch() check only relevant
+	LFT part
+40c93d3 use transportable constant attributes
+c8fa71a osmtest -code cleanup - use strncasecmp()
+770704a opensm/osm_mcast_mgr.c: In mcast_mgr_set_mft_block, fix node GUID
+	in log message
+3d20f82 opensm/osm_sa_path_record.c: separate router guid resolution code
+27ea3c8 opensm: fix gcc-4.4.1 warnings
+c88bfd3 opensm/osm_lid_mgr.c: Fix typo in OSM_LOG message
+a9ea08c opensm/osm_mesh.c: Add dump_mesh routine at OSM_LOG_DEBUG level
+bc2a61e C++ style coding does not compile
+6647600 opensm: remove meanless 'const' keywords in APIs
+323a74f opensm/osm_qos_parser_y.y: fix endless loop
+0121a81 opensm: fix endless looping in mcast_mgr
+696c022 opensm: fix some obvious -Wsign-compare warnings
+b91e3c3 opensm/osm_get_port_by_lid(): don't bother with lmc
+ca582df opensm/osm_get_port_by_lid(): speedup a port lookup
+fd846ee opensm/osm_mesh.c: simplify compare_switches() function
+fe20080 osm_sa.c - void * arithmetic causes problems
+220130f osm_helper.c use explicit value for struct init
+0168ece use standard varargs syntax in macro OSM_LOG()
+180b335 update functions to match .h prototypes
+9240ef4 opensm/osm_ucast_lash: fix use after free bug
+6f1a21a opensm: osm_get_port_by_lid() helper
+c9e2818 opensm/osm_sa_path_record.c: validate multicast membership
+225dcf5 opensm/osm_mesh.c: Remove edges in lash matrix
+4dd928b opensm/osm_sa_mcmember_record.c: clean uninitialized variable use
+c48f0bc opensm/osm_perfmgr_db.c: Fix memory leak of db nodes
+82d3585 opensm/osm_notice.c: move logging code to separate function
+9557f60 opensm/osm_inform.c: For traps 64-67, use GID from DataDetails in
+	log message
+e2e78d9 opensm/opensm.8.in: Indicate default rule for Default partition
+08c5beb opensm/osm_sa_node_record.c: dump NodeInfo with debug verbosity
+1fe88f0 opensm/multicast: merge mcm_port and mcm_info
+ba75747 opensm/multicast: consolidate port addition/removing code
+5e61ab8 opensm: port object reference in mcm ports list
+5c5dacf opensm: fix uninitialized return value in osm_sm_mcgrp_leave()
+7cfe18d osm_ucast_ftree.c: Removed reverse_hop parameters from
+	fabric_route_upgoing_by_going_down
+aa7fb47 opensm/multicast: kill mc group to_be_deleted flag
+a4910fe opensm/osm_mcast_mgr.c: multicast routing by mlid - renaming
+1d14060 opensm/multicast: remove change id tracking
+5a84951 opensm: use mgrp pointer as osm_sm_mcgrp_join/leave() parameter
+d8e3ff5 opensm: use mgrp pointer in port mcm_info
+0631cd3 opensm doc: Indicated limited (rather than partial) partition
+	membership
+1010535 opensm/osm_ucast_lash.c: In lash_core, return status -1 for all errors
+942e20f opensm/osm_helper.c: Add SM priority changed into trap 144 description
+2372999 opensm/osm_ucast_mgr: better lft setup
+e268b32 opensm/osm_helper.c: Only change method when > rather than >=
+9309e8c complib/cl_event.c: change nanosec var type long
+d93b126 opensm/complib: account for nsec overflow in timeout values
+ef4c8ac opensm/osm_qos_policy.c: matching PR query to QoS level with pkey
+c93b58b opensm: fixing some data types in osm_req_get/set
+2b89177 opensm/libvendor/osm_vendor_ibumad.c: Handle umad_alloc failure in
+	osm_vendor_get
+2cba163 opensm/osm_helper.c: In osm_dump_dr_smp, fix endian of status
+47397e3 opensm/osm_sm_mad_ctrl.c: Fix endian of status in error message
+e83b7ca opensm/osm_mesh.c: Reorder switches for lash
+9256239 opensm/osm_trap_rcv.c: Validate trap is 144 before checking for
+	NodeDescription changed
+011d9ca opensm/osm_ucast_lash.c: Handle calloc failure in generate_cdg_for_sp
+59964d7 opensm: fixing handling of opt.max_wire_smps
+f4e3cd0 opensm/osm_ucast_lash.c: Directly call calloc/free rather than
+	create/delete_cdg
+5a208bd opensm/osm_ucast_lash.c: Added error numbers to some error log messages
+3b80d10 opensm/osm_helper.c: fix printing trap 258 details
+f682fe0 opensm: do not configure MFTs when mcast support is disabled
+cc42095 opensm/osm_sm_mad_ctrl.c: In sm_mad_ctrl_send_err_cb, indicate
+	failed attribute
+aebf215 opensm/osm_ucast_lash.c: Remove osm_mesh_node_delete call from
+	switch_delete
+1ef4694 opensm/osm_path.h: In osm_dr_path_init, only copy needed part of path
+c594a2d opensm: osm_dr_path_extend can fail due to invalid hop count
+46e5668 opensm/osm_lash: Fix use after free problem in osm_mesh_node_delete
+81841dc opensm/osm_ucast_lash.c: Handle malloc failures better
+2801203 opensm: remove extra "0x" from debug message.
+88821d2 opensm/main.c: Display SMSL when specified
+f814dcd opensm/osm_subnet.c: Format lash_start_vl consistent with other
+	uint8 items
+66669c9 opensm/main.c: Display LASH start VL when specified
+31bb0a7 opensm/osm_mcst_mgr.c: check number of switches only once
+75e672c opensm: find MC group by MGID using fleximap
+2b7260d Clarify the syntax of the hop_weights_file
+e6f0070 opensm/osm_mesh.c: Improve VL utilization
+27497a0 opensm/osm_ucast_ftree.c Fix assert comparing number of CAs to CN ports
+3b98131 opensm/osm_qos_policy.c: Use proper size in malloc in
+	osm_qos_policy_vlarb_scope_create
+e6f367d opensm/osm_ucast_ftree.c: Made error numbers unique in some log
+	messages
+83261a8 osm_ucast_ftree.c Count number of hops instead of calculating it
+7bdf4ff opensm/osm_sa_(path multipath)_record.c: Fix typo in a couple of
+	log messages
+0f8ed87 opensm/osm_ucast_mgr.c: Add error numbers to some error log messages
+0b5ccb4 complib/Makefile.am: prevent file duplications
+e0b8ec9 opensm/osm_sminfo_rcv.c: clean type of smi_rcv_process_get_sm()
+4d01005 opensm: sweep component processors return status value
+6ad8d78 opensm/libvendor/osm_vendor_(ibumad mlx)_sa.c: Handle malloc
+	failure in __osmv_send_sa_req
+cf97ebf opensm/osm_ucast_lash.(h c): Replace memory allocation by array
+957461c opensm/osm_sa.c add attribute and component mask to error message
+5d339a1 osm_dump.c dump port if lft is set up
+518083d osm_port.c: check if op_vls = 0 before max_op_vls comparison
+b6964cb opensm/osm_port.c: Change log level of Invalid OP_VLS 0 message
+	to VERBOSE
+b27568c opensm/PerfMgr: Reduce host name length
+bc495c0 opensm/osm_lid_mgr.c bug in opensm LID assignment
+5a466fd opensm/osm_perfmgr_db.c: Remove unneeded initialization in
+	perfmgr_db_print_by_name
+57cf328 opensm/osm_ucast_ftree.c Increase the size of the hop table
+8323cf1 opensm/PerfMgr: Remove some underbars from internal names
+65b1c15 opensm: Changes to spec and make files for updated release notes
+cd226c7 OpenSM: include/vendor/osm_vendor.h - Replaced #elif with no
+	condition by #else
+9f8bd4a management: Fixed custom_release in SPEC files
+c0b8207 opensm/PerfMgr: Change redir_tbl_size to num_ports for better clarity
+596bb08 opensm/osm_sa.c: check for SA DB file only if requested
+2f2bd4e opensm SA DB dump/restore: load SA DB only once
+4abcbf2 opensm: Added print_desc to various log messages
+5e3d235 opensm/osm_vendor_ibumad.c: Move error info into single message
+8e5ca10 opensm/libvendor//osm_vendor_ibumad_sa.c: uninitialized fields
+d13c2b6 opensm/osm_sm_mad_ctrl.c Changes to some error messages
+f79d315 opensm/osm_sm_mad_ctrl.c: Add missing call to return mad to mad pool
+150a9b1 opensm/osm_sa_mcmember_record.c: print mcast join/create failures in
+	VERBOSE instead of DEBUG level
+9b7882a opensm/osm_vendor_ibumad.c: Change LID format to decimal in log message
+5256c43 opensm/osm_vendor_mlx: fix compilation error
+93db10d opensm/osm_vendor_mlx_txn.c: eliminate bunch of compilation warnings
+156fdc1 opensm/osm_helper.c Log format changes
+7a55434 opensm/osm_ucast_ftree.c Changed log level
+a1694de opensm/osm_state_mgr.c Added more info to some error messages
+fdec20a opensm/osm_trap_rcv.c: Eliminate heavy sweep on receipt of trap 145
+13a32a7 opensm - standardize on a single Windows #define - take #2
+b236a10 opensm/osm_db_files.c: kill useless malloc() castings
+4ba0c26 opensm/osm_db_files.c: add '/' path delimited
+e3b98a5 opensm/osm_sm_mad_ctrl.c: Fix qp0_mads_accounting
+dbbe5b3 opensm/osm_subnet.c: fixing bug in dumping options file
+f22856a opensm/osm_ucast_mgr.c: fix memory leak
+0d5f0b6 opensm: osm_get_mgrp_by_mgid() helper
+e3c044a osm_sa_mcmember_record.c: pass MCM Record data to mlid allocator
+3dda2dc opensm/osm_sa_member_record.c: mlid independent MGID generator
+1f95a3c opensm/osm_sa_mcmember_record.c: move mgid allocation code
+b78add1 complib: replace intn_t types by C99 intptr_t
+a864fd3 osmtest/osmt_mtl_regular_qp.c: cleaning uintn_t use
+9e01318 opensm/osm_console.c: make const functions
+f8c4c3e opensm/osm_mgrp_new(): add subnet db insertion
+80da047 complib/fleximap: make compar callback to return int
+bf7fe2d opensm: cleanup intn_t uses
+0862bba opensm/main.c: opensm cannot be killed while asking for port guid
+2b70193 opensm/complib: bug in cl_list_insert_array_head/tail functions
+4764199 opensm - use C99 transportable data type for pointer storage
+a9c326c opensm/osm_state_mgr.c: do not probe remote side of port 0
+4945706 opensm/osm_mcast_mgr.c: fix return value on alloc_mfts() failures
+8312a24 OpenSM: Fix unused variable compiler warning.
+ab8f0a3 opensm/partition: keep multicast group pointer
+a817430 opensm: Only clear SMP beyond end of PortInfo attribute
+52fb6f2 opensm/osm_switch.h: Remove dead osm_switch_get_physp_ptr routine
+aa6d932 opensm/osm_mcast_tbl.c: In osm_mcast_tbl_clear_mlid, use memset to
+	clear port mask entry
+2ad846b opensm/osm_trap_rcv.c: use source_lid and port_num for logging
+b9d7756 opensm/osm_mcast_tbl: Fix size of port mask table array
+11c0a9b opensm/main.c: Use strtoul rather than strtol for parsing transaction
+	timeout
+0608af9 opensm/osm_sm_mad_ctrl.c: In sm_mad_ctrl_send_err_cb, revert setting
+	of init failure on QoS initialization failures
+c6b4d4a opensm/osm_vendor_ibumad.c: Add transaction ID to osm_vendor_send
+	log message
+520af84 opensm/osm_sa_path_record.c: don't set dgid pointer for local subnet
+4a878fb opensm/osm_mcast_mgr.c: fix osm_mcast_mgr_compute_max_hops for
+	managed switch
+7c48590 opensm/osm_log.c: add OSM_LOG_SYS to default flags
+89f7cb6 opensm/osm_lid_mgr: use 'first_time_master_sweep' flag
+0cb7fab opensm: conversion to osm_get_port_by_lid()
+9d14fc0 opensm/osm_lid_mgr.c: fix memory leak
+c364aa1 opensm/opensm.init.in: fix install warning on SLES11
+1010c9c opensm/osm_sa_path_record.c: livelock in pr_rcv_get_path_parms
+4b2cd5e opensm/vendor: fix portguids array size
+52bf5b2 opensm/osm_subnet.c: fixing some options to not "hot-swappable"
+8900da0 opensm/osm_subnet.{c,h}: passing options to the event plugins
+051c57f Delete port only after GID OUT trap was sent
+d4ebf7e opensm/complib/cl_passivelock.h: remove unneeded casting
+8fdb17c opensm/complib/cl_types.h: convert cl_status_t to int
+fd7fb1e opensm/osm_mcast_mgr.c: preserve root switch calculation functionality
+fcb0f3a opensm/osm_mcast_mgr.c: code simplifications
+444f559 opensm/osm_mcast_mgr.c: fix bug in MC root switch calculation
+041ebcb opensm/osm_mcast_mgr.c: remove redundant casting
+3717f53 opensm/osm_sa_pkey_record.c: optimize port selection logic
+48352be opensm/osm_mcast_mgr.c: fix memory leak
+f3cf83f opensm/complib/cl_ptr_vector.c: fix bug/compiler warning
+27c8ebd opensm/osm_subnet.h: remove redundant function definition
+f296938 opensm/osm_vl_arb_rcv.c: fix double mutex release bug
+00bc48e opensm/osm_port_info_rcv.c: fix compilation warning
+8823800 opensm/osm_sa.{c,h}: osm_sa_db_file_dump() return values
+f4581f3 opensm/osm_qos.c: Fix typo in OSM_LOG message
+e3c790a opensm/osm_update_node_desc(): minor prototype improvement
+3cc68cb opensm/osm_vl_arb_rcv.c: Dump table after validating block number
+7dbb96e opensm SA DB: dump only if modified
+fa2106d opensm/osm_sa_infrominfo.c: fixes and simplifications in lid range check
+051a1dd opensm/osm_qos.c: split switch external and end ports setup
+a6c0189 opensm/osm_qos.c: merge SL2VL mapping capability check
+3fe8efe opensm/osm_slvl_map_rcv.c: verify port number values received from
+	network
+88c372c opensm/osm_slvl_map_rcv.c: fix mutex double release bug
+d282093 opensm/osm_slvl_map_rcv.c: fix port parsing on BE machine
+8e9dbd3 osm_sa_path_record.c: use PR DGID by reference
+7c9d375 osm_sa_path_record.c: separate mutlicast processing code
+cb2d18e opensm/osm_sa_path_record.c: MGID must be specified explicitly
+bd3932b opensm/osm_mcast_mgr.c: strip log-only variable
+9d93de3 opensm/osm_pkey_mgr.c: Eliminate unneeded parameter from pkey_mgr_get_physp_max_blocks API
+5f49472 opensm/include/osm_helper.h: Eliminate some duplicate declarations
+e8ddcd4 opensm/osm_opensm.c: no report when SM is exiting
+77ce7c8 complib/cl_timer: remove not needed timeval initializations
+490aae2 opensm/osm_helper.c: Add some missing message names to disp_msg_str
+d678a21 opensm: Modify OSM_LOG_SYS messages
+4cfb481 opensm: Fix wrong messages in MC delete flow
+5b82f92 opensm/osm_req.c: In osm_send_trap144, eliminate redundant clear of m_key in smp
+9bf64dc opensm/osm_qos.c: Eliminate unneeded endport SL to VL setup
+34b536c opensm/osm_sa_path_record.c: adding wrapper for pr_rcv_get_path_parms()
+237b5d1 opensm/osm_mcast_mgr.c: Only route MLIDs with more than 1 member
+a72db14 opensm/osm_trap_rcv.c: No need for heavy sweep when just NodeDescription changes
+ea9a768 opensm/osmtest.c: fix bug in getting attr offset
+a3dec3a iba/ib_types.h: remove assertion in ib_get_attr_offset()
+6bc032a return no path when path does not exist
+1592ae9 opensm: Better handling of non responsive SMAs
+a69f01b opensm/osm_perfmgr.c: Remove unnecessary lock reference from Performance Manager object
+167ade2 opensm: fixing compilation issues in some header files
+e1c253e opensm/qos.c: Revert port ranges for calls to sl2vl_update_table().
+0689f49 opensm/libvendor Reduce stack consumption
+59056c7 opensm - address windows env issues
+ff14200 opensm/osm_sa_multipath_record.c: livelock in mpr_rcv_get_path_parms
+3f23d83 opensm/osm_sa_path_record.c: Add error code to newly added log message
+7fc6cd3 ib_types.h add debug assert
+4fd4ca3 osmtest - use helper function
+6fdc20a opensm/complib use portable macro syntax
+bf23d7c opensm: fixed getline pointer allocation free in osm_console_io
+74867c7 Add node/port/qos information to some error messages
+31a617d replace (long*)(long) casting with transportable data type (uintptr_t)
+8da7521 opensm/st.c: fix potential core dumps
+6a30911 opensm/osm_console.c: fix memory and file descriptor leaks
+696f12c opensm/osm_qos_parser_y.y: fixing bunch of memory leaks on invalid values
+3a7b97c opensm/osm_ucast_file.c: closing file descriptor in error path
+b4575c5 opensm/osm_pkey_mgr.c: fixing small memory leak
+dc0695f opensm/osm_ucast_lash.c: small bug in calculating allocated size
+3c9604b opensm/osm_ucast_ftree.c: fixing another memory leak at error path
+4460990 opensm/osm_ucast_ftree.c: fix small memory leak in error path
+857cd6c opensm/osm_trap_rcv.c: fix possible core dump
+b74bef5 opensm/osm_trap_rcv.c: No need to check for sweep for trap 145
+81dade3 opensm/osm_ucast_ftree: When roots are not connected, update hop count but not lft
+acf2337 osmtest/osmt_service.c: In osmt_run_service_records_flow, add missing status
+6db7f4a opensm/osm_state_mgr.c: Don't signal DISCOVER to SM state machine when already DISCOVERING
+28693c5 Fix autotools to include the necessary M4 files
+c1c8730 osm_vl15intf.c: fixing use-after-free coredump
+3353f9b opensm/osm_helper.c: use ARR_SIZE macro instead of hardcoded values
+2da9849 osmtest/osmt_slvl_vl_arb.c: handling fopen() failure
+f48d5ea opensm/osm_db_files.c: malloc() return value run-time check
+ea3ef82 opensm/osm_db_files.c: fix small memory leak
+f4a5174 opensm/osm_subnet.c: fixing small bug in error path
+c18ef23 opensm/osm_mesh.c: fixing a bug in compare_switches()
+83b74cd opensm/osm_helper.c: fix potential overrun of the array
+85c0ac9 osmtest/osmtest.c: handle timeouts in PR stress test
+ebb2c84 opensm/osm_node_info_rcv.c: move p_physp declaration under code block
+5c88113 opensm/osm_node_info_rcv.c: remove useless code line
+866d939 opensm/osm_sa_vlarb_record.c: removed unused variable
+15a8770 opensm/osm_sa_pkey_record.c: removing unused variable
+8f002b7 opensm/osm_pkey.c: removing unused function
+9c0fa2f opensm/osm_sminfo_rcv.c: removing unused variable
+d3f060a opensm/osm_mtree.c: removing useless 'if' statement
+bbef64a libvendor/osm_vendor_mlx_sa.c: remove useless "if" statement
+2da02b5 libvendor/osm_vendor_ibumad_sa.c: remove useless "if" statement
+435dde0 opensm/sa: simplify osm_mcmr_rcv_find_or_create_new_mgrp() function call
+e7a872d opensm/osm_qos_policy.c: change a log message
+ffbe7d0 opensm: Cause status of unicast routing attempt to propogate to callers of osm_ucast_mgr_process().
+673877a opensm: Make mcast_mgr_purge_tree() available outside osm_mcast_mgr.c.
+b135687 opensm: Track the minimum value in the fabric of data VLs supported.
+7c1ee64 opensm: Fix typo in routing section in man page and doc
+d206011 opensm/osmtest/osmtest.c: inventory file parsing bugfix
+e01121a fixed deprecated conversion from string constant to char* warning
+a7ba101 opensm/main.c: Change size parameter in setvbuf call from 0 to BUFSIZ
+2a92554 opensm/osmtest/osmt_multicast.c: Fix multicast flow failures on pkey validation
+364e65b opensm/osm_dump.c: Fix FDR10 speed dumping
+80e11b9 osmtest/osmt_multicast.c: Fix check of partial JoinState delete request - removing NonMember (o15.0.1.14)
+78e1e4e osmtest/osmt_multicast.c: Fix check of BAD RATE when connecting to existing MGID (o15.0.1.13)
+e94e972 osmtest/osmt_multicast.c: Fix first MGID=0 MC group creation case
+daedad7 opensm/osmtest/osmt_multicast.c: Fix an unrealistic rate case
+110ae10 opensm: fixed segfault in osm_destroy
+d666205 opensm/osm_prtn.c: Fix typo in log message
+f3ccb45 opensm: Remove duplicate definition of IB_MAD_STATUS_CLASS_MASK
+917070c Move no_fallback_routing_engine from osm_subn_opt_t to osm_opensm_t.
+d71a924 Free memory from osm_subn_opt_t when osm_subn_t destroyed
+1b75fa4 Remove duplicate initialization of scatter_ports
+b5f4570 Do not load configs from the default config file and specified config file
+f24a089 Fix memleak and segfault
+247d0d8 Fix IPoIB broadcast group creation on non-default Pkey
+78d86bd opensm/osm_subnet.c: Trivial optimization to code flow in subn_verify_sl2vl
+6bb41e3 opensm/complib/cl_atomic.h: Commentary changes
+28ee7b9 opensm/osm_sa_class_port_info.c: Conditionalize setting of OSM_CAP2_IS_MCAST_TOP_SUPPORTED
+29e59a2 Removed unused parameter "ib_mad_addr" from umad_reciever()
+63ad0bb opensm/osmeventplugin/src/osmeventplugin.c: Output LIDs in decimal
+17967c2 opensm/osm_switch.h: Fix commentary typo
+6d3e223 opensm/osm_perfmgr.c: Enhance send error log message
+08abcd4 opensm/osm_sa_mad_ctrl.c: Enhance send error log message
+13f3e0f opensm/libvendor/osm_vendor_ibumad.c: Fix DR path printing on send timeouts
+0dfd760 Fix suggest parentheses around operand warning
+ad2dbf8 Support source-target-port-guid QoS policy configuration with ULP 'any'
+080e3ad Support source-port-guid QoS policy configuration with ULP 'any'
+49777a9 Fix typo in qos-ulps parsing comment
+bcfe1b9 opensm/osm_torus.c: Use "OpenSM standard" error codes
+683397d Fix use of GNU old-style field designator extension
+719fcd4 Fix use of logical && with constant operand; switch to bitwise &
+6bc87bd opensm: fix search common pkeys
+a6ac5e3 opensm/osm_drop_mgr.c: GID out trap fix
+7717505 opensm/osm_pkey_mgr.c: fix segfault when trying to access not allocated block
+eb90efd include/opensm/osm_subnet.h: fix comment typos
+0a315e3 opensm/include/iba/ib_types.h: fix comment typos and errors
+125baa0 opensm/opensm.8.in: Fix cut 'n paste error
+f0d14d2 opensm/osm_ucast_ftree.c: Fix some typos
+841096f opensm: Fix opensm handover/relinquish corner case
+bf420ac opensm/osm_helper.c: Fix commentary typo
+2be999c opensm: fixed description in osm_routing_engine
+cf3d185 gen_chlog.sh: fixed version ordering
+8d49c5d opensm/osm_sa_guidinfo_record.c: Fix locking
+8d764b8 Fix continous looping when clearing accum_pkeys table
+32500a6 opensm/osm_link_mgr.c: Fix sending PortInfo Set for ports supporting extended speed
+e24ff39 Fix Pkey enforcement configuration
+041e47a Fix PathRecord reply to be the same for allow_both_pkeys ON and OFF
+3c9b81d OpenSM/osm_prtn_config.c: Fix non-initialized pointer usage
+28a40a2 Fix logging messages about op_vls and mtu mismatch
+5e672a6 Fix memory leak on dfsssp_context_destroy()
+
+* Other less critical or visible bugs were also fixed.
+
+5 Main Verification Flows
+-------------------------
+
+OpenSM verification is run using the following activities:
+* osmtest - a stand-alone program
+* ibmgtsim (IB management simulator) based - a set of flows that
+  simulate clusters, inject errors and verify OpenSM capability to
+  respond and bring up the network correctly.
+* small cluster regression testing - where the SM is used on back to
+  back or single switch configurations. The regression includes
+  multiple OpenSM dedicated tests.
+* cluster testing - when we run OpenSM to setup a large cluster, perform
+  hand-off, reboots and reconnects, verify routing correctness and SA
+  responsiveness at the ULP level (IPoIB and SDP).
+
+5.1 osmtest
+
+osmtest is an automated verification tool used for OpenSM
+testing. Its verification flows are described by list below.
+
+* Inventory File: Obtain and verify all port info, node info, link and path
+  records parameters.
+
+* Service Record:
+   - Register new service
+   - Register another service (with a lease period)
+   - Register another service (with service p_key set to zero)
+   - Get all services by name
+   - Delete the first service
+   - Delete the third service
+   - Added bad flows of get/delete  non valid service
+   - Add / Get same service with different data
+   - Add / Get / Delete by different component  mask values (services
+     by Name & Key / Name & Data / Name & Id / Id only )
+
+* Multicast Member Record:
+   - Query of existing Groups (IPoIB)
+   - BAD Join with insufficient comp mask (o15.0.1.3)
+   - Create given MGID=0 (o15.0.1.4)
+   - Create given MGID=0xFF12A01C,FE800000,00000000,12345678 (o15.0.1.4)
+   - Create BAD MGID=0xFA. (o15.0.1.6)
+   - Create BAD MGID=0xFF12A01B w/ link-local not set (o15.0.1.6)
+   - New MGID with invalid join state (o15.0.1.9)
+   - Retry of existing MGID - See JoinState update (o15.0.1.11)
+   - BAD RATE when connecting to existing MGID (o15.0.1.13)
+   - Partial JoinState delete request - removing FullMember (o15.0.1.14)
+   - Full Delete of a group (o15.0.1.14)
+   - Verify Delete by trying to Join deleted group (o15.0.1.14)
+   - BAD Delete of IPoIB membership (no prev join) (o15.0.1.15)
+
+* GUIDInfo Record:
+   - All GUIDInfoRecords in subnet are obtained
+
+* MultiPathRecord:
+   - Perform some compliant and noncompliant MultiPathRecord requests
+   - Validation is via status in responses and IB analyzer
+
+* PKeyTableRecord:
+  - Perform some compliant and noncompliant PKeyTableRecord queries
+  - Validation is via status in responses and IB analyzer
+
+* LinearForwardingTableRecord:
+  - Perform some compliant and noncompliant LinearForwardingTableRecord queries
+  - Validation is via status in responses and IB analyzer
+
+* Event Forwarding: Register for trap forwarding using reports
+   - Send a trap and wait for report
+   - Unregister non-existing
+
+* Trap 64/65 Flow: Register to Trap 64-65, create traps (by
+  disconnecting/connecting ports) and wait for report, then unregister.
+
+* Stress Test: send PortInfoRecord queries, both single and RMPP and
+  check for the rate of responses as well as their validity.
+
+
+5.2 IB Management Simulator OpenSM Test Flows:
+
+The simulator provides ability to simulate the SM handling of virtual
+topologies that are not limited to actual lab equipment availability.
+OpenSM was simulated to bring up clusters of up to 10,000 nodes. Daily
+regressions use smaller (16 and 128 nodes clusters).
+
+The following test flows are run on the IB management simulator:
+
+* Stability:
+  Up to 12 links from the fabric are randomly selected to drop packets
+  at drop rates up to 90%. The SM is required to succeed in bringing the
+  fabric up. The resulting routing is verified to be correct as well.
+
+* LID Manager:
+  Using LMC = 2 the fabric is initialized with LIDs. Faults such as
+  zero LID, Duplicated LID, non-aligned (to LMC) LIDs are
+  randomly assigned to various nodes and other errors are randomly
+  output to the guid2lid cache file. The SM sweep is run 5 times and
+  after each iteration a complete verification is made to ensure that all
+  LIDs that could possibly be maintained are kept, as well as that all nodes
+  were assigned a legal LID range.
+
+* Multicast Routing:
+  Nodes randomly join the 0xc000 group and eventually the
+  resulting routing is verified for completeness and adherence to
+  Up/Down routing rules.
+
+* osmtest:
+  The complete osmtest flow as described in the previous table is run on
+  the simulated fabrics.
+
+* Stress Test:
+  This flow merges fabric, LID and stability issues with continuous
+  PathRecord, ServiceRecord and Multicast Join/Leave activity to
+  stress the SM/SA during continuous sweeps. InformInfo Set/Delete/Get
+  were added to the test such both existing and non existing nodes
+  perform them in random order.
+
+5.3 OpenSM Regression
+
+Using a back-to-back or single switch connection, the following set of
+tests is run nightly on the stacks described in table 2. The included
+tests are:
+
+* Stress Testing: Flood the SA with queries from multiple channel
+  adapters to check the robustness of the entire stack up to the SA.
+
+* Dynamic Changes: Dynamic Topology changes, through randomly
+  dropping SMP packets, used to test OpenSM adaptation to an unstable
+  network & verify DB correctness.
+
+* Trap Injection: This flow injects traps to the SM and verifies that it
+  handles them gracefully.
+
+* SA Query Test: This test exhaustively checks the SA responses to all
+  possible single component mask. To do that the test examines the
+  entire set of records the SA can provide, classifies them by their
+  field values and then selects every field (using component mask and a
+  value) and verifies that the response matches the expected set of records.
+  A random selection using multiple component mask bits is also performed.
+
+5.4 Cluster testing:
+
+Cluster testing is usually run before a distribution release. It
+involves real hardware setups of 16 to 32 nodes (or more if a beta site
+is available). Each test is validated by running all-to-all ping through the IB
+interface. The test procedure includes:
+
+* Cluster bringup
+
+* Hand-off between 2 or 3 SM's while performing:
+  - Node reboots
+  - Switch power cycles (disconnecting the SM's)
+
+* Unresponsive port detection and recovery
+
+* osmtest from multiple nodes
+
+* Trap injection and recovery
+
+
+6 Qualified Software Stacks and Devices
+---------------------------------------
+
+OpenSM Compatibility
+--------------------
+Note that OpenSM version 3.2.1 and earlier used a value of 1 in host
+byte order for the default SM_Key, so there is a compatibility issue
+with these earlier versions of OpenSM when the 3.2.2 or later version
+is running on a little endian machine. This affects SM handover as well
+as SA queries (saquery tool in infiniband-diags).
+
+
+Table 2 - Qualified IB Stacks
+=============================
+
+Stack                                    | Version
+-----------------------------------------|--------------------------
+The main stream Linux kernel             |   2.6.x
+OFED                                     |   1.5,1.5.x
+OFED                                     |   1.4
+OFED                                     |   1.3
+OFED                                     |   1.2
+OFED                                     |   1.1
+OFED                                     |   1.0
+
+Table 3 - Qualified Devices and Corresponding Firmware
+======================================================
+
+Mellanox
+Device                              |   FW versions
+------------------------------------|-------------------------------
+InfiniScale                         | fw-43132  5.2.000 (and later)
+InfiniScale III                     | fw-47396  0.5.000 (and later)
+InfiniScale IV                      | fw-48436  7.1.000 (and later)
+InfiniHost                          | fw-23108  3.5.000 (and later)
+InfiniHost III Lx                   | fw-25204  1.2.000 (and later)
+InfiniHost III Ex (InfiniHost Mode) | fw-25208  4.8.200 (and later)
+InfiniHost III Ex (MemFree Mode)    | fw-25218  5.3.000 (and later)
+ConnectX IB                         | fw-25408  2.3.000 (and later)
+
+QLogic/PathScale
+Device  |   Note
+--------|-----------------------------------------------------------
+iPath   | QHT6040 (PathScale InfiniPath HT-460)
+iPath   | QHT6140 (PathScale InfiniPath HT-465)
+iPath   | QLE6140 (PathScale InfiniPath PE-880)
+iPath   | QLE7240
+iPath   | QLE7280
+
+Note 1: OpenSM does not run on an IBM Galaxy (eHCA) as it does not expose
+QP0 and QP1. However, it does support it as a device on the subnet.
+
+Note 2: QoS firmware and Mellanox devices
+
+HCAs: QoS supported by ConnectX. QoS-enabled FW release is 2_5_000 and
+later.
+
+Switches: QoS supported by InfiniScale III
+Any InfiniScale III FW that is supported by OpenSM supports QoS.
