@@ -78,25 +78,9 @@ static int slen=sizeof(serv_addr);
 
 typedef struct _log_events {
 	FILE *log_file;
+	int *statsd_socket;
 	osm_log_t *osmlog;
 } _log_events_t;
-
-int connect_statsd() {
-    /* create socket */
-    if (sd==0) {
-        if ((sd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1)
-            err("socket");
-        bzero(&serv_addr, sizeof(serv_addr));
-        serv_addr.sin_family = AF_INET;
-        serv_addr.sin_port = htons(8125);
-        if (inet_aton("127.0.0.1", &serv_addr.sin_addr)==0)
-        {
-            fprintf(stderr, "inet_aton() failed\n");
-            exit(1);
-        }
-    }
-        return 0;
-}
 
 /**** Regex Function
  * Might be to heavy for this function, due to the hight frequency
@@ -129,6 +113,17 @@ static void *construct(osm_opensm_t *osm)
 	_log_events_t *log = malloc(sizeof(*log));
 	if (!log)
 		return (NULL);
+    
+    if ((sd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1)
+        err("socket");
+	bzero(&serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(8125);
+    if (inet_aton("127.0.0.1", &serv_addr.sin_addr)==0)
+    {
+        fprintf(stderr, "inet_aton() failed\n");
+        exit(1);
+    }
 
 	log->log_file = fopen(SAMPLE_PLUGIN_OUTPUT_FILE, "a+");
 
@@ -160,7 +155,6 @@ static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
     if (pc->time_diff_s==0) {
         return;
     }
-    connect_statsd();
     /* Variable and structure definitions. */
     int b,e;
     char *hostname = regexp(pc->port_id.node_name,"[a-z]+[0-9]+",&b,&e);
@@ -204,7 +198,6 @@ static void handle_port_counter_ext(_log_events_t * log, osm_epi_dc_event_t * ep
     if (epc->time_diff_s >= 10) {
         return;
     }
-    connect_statsd();
 	int b,e;
     char *hostname = regexp(epc->port_id.node_name,"[a-z]+[0-9]+",&b,&e);
     char buf[BufferLength];
