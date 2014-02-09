@@ -71,14 +71,17 @@
 #define BufferLength 512
 
 /* Initialize connection stuff */
-static int conn = 0;
-static int sd, length = sizeof(int);
-static struct sockaddr_in serv_addr;
-static int slen=sizeof(serv_addr);
+// statsd
+static struct sockaddr_in statsd_serv_addr;
+static int statsd_slen=sizeof(statsd_serv_addr);
+// logstash
+static struct sockaddr_in logstash_serv_addr;
+static int logstash_slen=sizeof(logstash_serv_addr);
 
 typedef struct _log_events {
 	FILE *log_file;
 	int *statsd_socket;
+	int *logstash_socket;
 	osm_log_t *osmlog;
 } _log_events_t;
 
@@ -114,12 +117,24 @@ static void *construct(osm_opensm_t *osm)
 	if (!log)
 		return (NULL);
     
-    if ((sd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1)
+	// Statsd socket
+    if ((log->statsd_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1)
         err("socket");
-	bzero(&serv_addr, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(8125);
-    if (inet_aton("127.0.0.1", &serv_addr.sin_addr)==0)
+	bzero(&statsd_serv_addr, sizeof(statsd_serv_addr));
+    statsd_serv_addr.sin_family = AF_INET;
+    statsd_serv_addr.sin_port = htons(8125);
+    if (inet_aton("127.0.0.1", &statsd_serv_addr.sin_addr)==0)
+    {
+        fprintf(stderr, "inet_aton() failed\n");
+        exit(1);
+    }
+	// Logstash socket 5544
+    if ((log->logstash_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1)
+        err("socket");
+	bzero(&logstash_serv_addr, sizeof(logstash_serv_addr));
+    logstash_serv_addr.sin_family = AF_INET;
+    logstash_serv_addr.sin_port = htons(5544);
+    if (inet_aton("127.0.0.1", &logstash_serv_addr.sin_addr)==0)
     {
         fprintf(stderr, "inet_aton() failed\n");
         exit(1);
@@ -183,7 +198,7 @@ static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
         sprintf(&buf[strlen(buf)], "ib.%s.%i.err.vl15_dropped:+%lu|g\n",
             hostname, pc->port_id.port_num, pc->vl15_dropped);
     }
-    if (sendto(sd, buf, strlen(buf), 0, (struct sockaddr*)&serv_addr, slen)==-1)
+    if (sendto(log->statsd_socket, buf, strlen(buf), 0, (struct sockaddr*)&statsd_serv_addr, statsd_slen)==-1)
         err("sendto()");
     //fprintf(log->log_file,buf);
 }
@@ -209,7 +224,7 @@ static void handle_port_counter_ext(_log_events_t * log, osm_epi_dc_event_t * ep
 	    hostname, epc->port_id.port_num, epc->rcv_pkts);
     sprintf(&buf[strlen(buf)], "ib.%s.%i.perf.xmit_pkts:+%lu|g\n\0",
 	    hostname, epc->port_id.port_num, epc->xmit_pkts);
-    if (sendto(sd, buf, strlen(buf), 0, (struct sockaddr*)&serv_addr, slen)==-1)
+    if (sendto(log->statsd_socket, buf, strlen(buf), 0, (struct sockaddr*)&statsd_serv_addr, statsd_slen)==-1)
         err("sendto()");
     //fprintf(log->log_file,buf);
 }
@@ -219,10 +234,15 @@ static void handle_port_counter_ext(_log_events_t * log, osm_epi_dc_event_t * ep
 static void handle_port_select(_log_events_t * log, osm_epi_ps_event_t * ps)
 {
 	if (ps->xmit_wait > 0) {
-		fprintf(log->log_file,
+	    char buf[BufferLength];
+		
+	    sprintf(buf,
 			"Port select Xmit Wait counts for node 0x%" PRIx64
 			" (%s) port %d\n", ps->port_id.node_guid,
 			ps->port_id.node_name, ps->port_id.port_num);
+		fprintf(log->log_file,buf);
+	    if (sendto(log->logstash_socket, buf, strlen(buf), 0, (struct sockaddr*)&logstash_serv_addr, logstash_slen)==-1)
+			err("sendto()");
 	}
 }
 
@@ -230,18 +250,23 @@ static void handle_port_select(_log_events_t * log, osm_epi_ps_event_t * ps)
  */
 static void handle_trap_event(_log_events_t *log, ib_mad_notice_attr_t *p_ntc)
 {
+	char buf[BufferLength];
 	if (ib_notice_is_generic(p_ntc)) {
-		fprintf(log->log_file,
+		sprintf(buf,
 			"Generic trap type %d; event %d; from LID 0x%x\n",
 			ib_notice_get_type(p_ntc),
 			cl_ntoh16(p_ntc->g_or_v.generic.trap_num),
 			cl_ntoh16(p_ntc->issuer_lid));
 	} else {
-		fprintf(log->log_file,
+		sprintf(buf,
 			"Vendor trap type %d; from LID 0x%x\n",
 			ib_notice_get_type(p_ntc),
 			cl_ntoh16(p_ntc->issuer_lid));
 	}
+	fprintf(log->log_file,buf);
+	if (sendto(log->logstash_socket, buf, strlen(buf), 0, (struct sockaddr*)&logstash_serv_addr, logstash_slen)==-1)
+		err("sendto()");
+	
 
 }
 
@@ -251,6 +276,7 @@ static void report(void *_log, osm_epi_event_id_t event_id, void *event_data)
 {
 	_log_events_t *log = (_log_events_t *) _log;
 
+	char buf[BufferLength];
 	switch (event_id) {
 	case OSM_EVENT_ID_PORT_ERRORS:
 		handle_port_counter(log, (osm_epi_pe_event_t *) event_data);
@@ -265,19 +291,32 @@ static void report(void *_log, osm_epi_event_id_t event_id, void *event_data)
 		handle_trap_event(log, (ib_mad_notice_attr_t *) event_data);
 		break;
 	case OSM_EVENT_ID_SUBNET_UP:
-		fprintf(log->log_file, "Subnet up reported\n");
+		sprintf(buf, "Subnet up reported\n");
+		fprintf(log->log_file, buf);
+		if (sendto(log->logstash_socket, buf, strlen(buf), 0, (struct sockaddr*)&logstash_serv_addr, logstash_slen)==-1)
+			err("sendto()");
 		break;
 	case OSM_EVENT_ID_HEAVY_SWEEP_START:
-		fprintf(log->log_file, "Heavy sweep started\n");
+		sprintf(buf, "Heavy sweep started\n");
+		fprintf(log->log_file, buf);
+		if (sendto(log->logstash_socket, buf, strlen(buf), 0, (struct sockaddr*)&logstash_serv_addr, logstash_slen)==-1)
+			err("sendto()");
 		break;
 	case OSM_EVENT_ID_HEAVY_SWEEP_DONE:
-		fprintf(log->log_file, "Heavy sweep completed\n");
+		sprintf(buf, "Heavy sweep completed\n");
+		fprintf(log->log_file, buf);
+		if (sendto(log->logstash_socket, buf, strlen(buf), 0, (struct sockaddr*)&logstash_serv_addr, logstash_slen)==-1)
+			err("sendto()");
 		break;
 	case OSM_EVENT_ID_UCAST_ROUTING_DONE:
-		fprintf(log->log_file, "Unicast routing completed\n");
+		sprintf(buf, "Unicast routing completed\n");
+		fprintf(log->log_file, buf);
+		if (sendto(log->logstash_socket, buf, strlen(buf), 0, (struct sockaddr*)&logstash_serv_addr, logstash_slen)==-1)
+			err("sendto()");
 		break;
 	case OSM_EVENT_ID_STATE_CHANGE:
-		fprintf(log->log_file, "SM state changed\n");
+		sprintf(buf, "SM state changed\n");
+		fprintf(log->log_file, buf);
 		break;
 	case OSM_EVENT_ID_SA_DB_DUMPED:
 		fprintf(log->log_file, "SA DB dump file updated\n");
