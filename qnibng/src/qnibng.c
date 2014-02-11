@@ -252,11 +252,25 @@ static void handle_trap_event(_log_events_t *log, ib_mad_notice_attr_t *p_ntc)
 {
 	char buf[BufferLength];
 	if (ib_notice_is_generic(p_ntc)) {
-		sprintf(buf,
-			"Generic trap type %d; event %d; from LID 0x%x\n",
-			ib_notice_get_type(p_ntc),
-			cl_ntoh16(p_ntc->g_or_v.generic.trap_num),
-			cl_ntoh16(p_ntc->issuer_lid));
+		if (cl_ntoh16(p_ntc->g_or_v.generic.trap_num) == 64) {
+			sprintf(buf,
+				"PortUp; Event %d; SwitchLID 0x%x; nodeGUID %lu\n",
+				cl_ntoh16(p_ntc->g_or_v.generic.trap_num),
+				cl_ntoh16(p_ntc->issuer_lid),
+				p_ntc->data_details.ntc_64_67.gid.unicast.interface_id);
+			} else if (cl_ntoh16(p_ntc->g_or_v.generic.trap_num) == 65) {
+			sprintf(buf,
+				"PortDown; Event %d; SwitchLID 0x%x; nodeGUID %lu\n",
+				cl_ntoh16(p_ntc->g_or_v.generic.trap_num),
+				cl_ntoh16(p_ntc->issuer_lid),
+				p_ntc->data_details.ntc_64_67.gid.unicast.interface_id);
+			} else {
+			sprintf(buf,
+				"Generic trap type %d; event %d; from LID 0x%x\n",
+				ib_notice_get_type(p_ntc),
+				cl_ntoh16(p_ntc->g_or_v.generic.trap_num),
+				cl_ntoh16(p_ntc->issuer_lid));			
+			}
 	} else {
 		sprintf(buf,
 			"Vendor trap type %d; from LID 0x%x\n",
