@@ -67,8 +67,20 @@
 #include <opensm/osm_node.h>
 #include <opensm/osm_opensm.h>
 #include <opensm/osm_helper.h>
+/* include to create UDP socket */
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #define PERFMGR_INITIAL_TID_VALUE 0xcafe
+
+/* define address and port of graphite aggregator */
+#define SERVER "127.0.0.1"
+#define PORT 2003
+#define BufferLength 512
+
+static struct sockaddr_in logstash_serv_addr;
+static int logstash_slen=sizeof(logstash_serv_addr);
 
 #if ENABLE_OSM_PERF_MGR_PROFILE
 struct {
@@ -800,9 +812,7 @@ _exit:
  **********************************************************************/
 void osm_perfmgr_process(osm_perfmgr_t * pm)
 {
-#if ENABLE_OSM_PERF_MGR_PROFILE
 	struct timeval before, after;
-#endif
 
 	if (pm->state != PERFMGR_STATE_ENABLED)
 		return;
@@ -829,9 +839,7 @@ void osm_perfmgr_process(osm_perfmgr_t * pm)
 		CL_PLOCK_RELEASE(pm->sm->p_lock);
 	}
 
-#if ENABLE_OSM_PERF_MGR_PROFILE
 	gettimeofday(&before, NULL);
-#endif
 	pm->sweep_state = PERFMGR_SWEEP_ACTIVE;
 	/* With the global lock held, collect the node guids */
 	/* FIXME we should be able to track SA notices
@@ -848,23 +856,22 @@ void osm_perfmgr_process(osm_perfmgr_t * pm)
 	/* clean out any nodes found to be removed during the sweep */
 	remove_marked_nodes(pm);
 
-#if ENABLE_OSM_PERF_MGR_PROFILE
 	/* spin on outstanding queries */
 	while (pm->outstanding_queries > 0)
 		cl_event_wait_on(&pm->sig_sweep, 1000, TRUE);
 
 	gettimeofday(&after, NULL);
 	diff_time(&before, &after, &after);
-	osm_log_v2(pm->log, OSM_LOG_INFO, FILE_ID,
-		   "PerfMgr total sweep time : %ld.%06ld s\n"
-		   "        fastest mad      : %g us\n"
-		   "        slowest mad      : %g us\n"
-		   "        average mad      : %g us\n",
+	//osm_log_v2(pm->log, OSM_LOG_INFO, FILE_ID,
+    char buf[BufferLength];
+    sprintf(buf, 
+		   "PerfMgr total sweep time %ld.%06lds MAD: "
+		   "fastest %gus, slowest %gus, avg %gus\n",
 		   after.tv_sec, after.tv_usec, perfmgr_mad_stats.fastest_us,
 		   perfmgr_mad_stats.slowest_us, perfmgr_mad_stats.avg_us);
 	clear_mad_stats();
-#endif
-
+	if (sendto(pm->logstash_socket, buf, strlen(buf), 0, (struct sockaddr*)&logstash_serv_addr, logstash_slen)==-1)
+        err("sendto()");
 	pm->sweep_state = PERFMGR_SWEEP_SLEEP;
 }
 
@@ -1363,6 +1370,17 @@ ib_api_status_t osm_perfmgr_init(osm_perfmgr_t * pm, osm_opensm_t * osm,
 	pm->subn = &osm->subn;
 	pm->sm = &osm->sm;
 	pm->log = &osm->log;
+	// Logstash socket 5544
+    if ((pm->logstash_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP))==-1)
+        err("socket");
+	bzero(&logstash_serv_addr, sizeof(logstash_serv_addr));
+    logstash_serv_addr.sin_family = AF_INET;
+    logstash_serv_addr.sin_port = htons(5544);
+    if (inet_aton("127.0.0.1", &logstash_serv_addr.sin_addr)==0)
+    {
+        fprintf(stderr, "inet_aton() failed\n");
+        exit(1);
+    }
 	pm->mad_pool = &osm->mad_pool;
 	pm->vendor = osm->p_vendor;
 	pm->trans_id = PERFMGR_INITIAL_TID_VALUE;

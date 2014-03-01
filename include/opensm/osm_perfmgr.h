@@ -126,6 +126,7 @@ typedef struct osm_perfmgr {
 	osm_subn_t *subn;
 	osm_sm_t *sm;
 	osm_log_t *log;
+	int *logstash_socket;
 	osm_mad_pool_t *mad_pool;
 	atomic32_t trans_id;
 	osm_vendor_t *vendor;

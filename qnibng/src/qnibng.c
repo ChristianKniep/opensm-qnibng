@@ -198,7 +198,7 @@ static void handle_port_counter(_log_events_t * log, osm_epi_pe_event_t * pc)
         sprintf(&buf[strlen(buf)], "ib.%s.%i.err.vl15_dropped:+%lu|g\n",
             hostname, pc->port_id.port_num, pc->vl15_dropped);
     }
-    if (sendto(log->statsd_socket, buf, strlen(buf), 0, (struct sockaddr*)&statsd_serv_addr, statsd_slen)==-1)
+	if (sendto(log->statsd_socket, buf, strlen(buf), 0, (struct sockaddr*)&statsd_serv_addr, statsd_slen)==-1)
         err("sendto()");
     //fprintf(log->log_file,buf);
 }
