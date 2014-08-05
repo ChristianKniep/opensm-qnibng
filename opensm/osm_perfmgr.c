@@ -862,13 +862,13 @@ void osm_perfmgr_process(osm_perfmgr_t * pm)
 		cl_event_wait_on(&pm->sig_sweep, 1000, TRUE);
 
 	gettimeofday(&after, NULL);
-	diff_time(&before, &after, &after);
+	//diff_time(&before, &after, &after);
 	//osm_log_v2(pm->log, OSM_LOG_INFO, FILE_ID,
     char buf[BufferLength];
     sprintf(buf, 
 		   "PerfMgr total sweep time %ld.%06lds",
 		   after.tv_sec, after.tv_usec);
-	clear_mad_stats();
+	//clear_mad_stats();
 	if (sendto(pm->logstash_socket, buf, strlen(buf), 0, (struct sockaddr*)&logstash_serv_addr, logstash_slen)==-1)
         err("sendto()");
 	pm->sweep_state = PERFMGR_SWEEP_SLEEP;
@@ -1338,9 +1338,9 @@ static void pc_recv_process(void *context, void *data)
 	do {
 		struct timeval proc_time;
 		gettimeofday(&proc_time, NULL);
-		diff_time(&p_madw->context.perfmgr_context.query_start,
-			  &proc_time, &proc_time);
-		update_mad_stats(&proc_time);
+		//diff_time(&p_madw->context.perfmgr_context.query_start,
+		//	  &proc_time, &proc_time);
+		//update_mad_stats(&proc_time);
 	} while (0);
 #endif
 
