@@ -88,8 +88,9 @@ struct {
 	double slowest_us;
 	double avg_us;
 	uint64_t num;
-} perfmgr_mad_stats = {
-fastest_us: DBL_MAX, slowest_us: DBL_MIN, avg_us: 0, num:0};
+} perfmgr_mad_stats;
+#= {
+#fastest_us: DBL_MAX, slowest_us: DBL_MIN, avg_us: 0, num:0};
 
 /* diff must be something which can fit in a susecond_t */
 static inline void update_mad_stats(struct timeval *diff)
@@ -865,10 +866,8 @@ void osm_perfmgr_process(osm_perfmgr_t * pm)
 	//osm_log_v2(pm->log, OSM_LOG_INFO, FILE_ID,
     char buf[BufferLength];
     sprintf(buf, 
-		   "PerfMgr total sweep time %ld.%06lds MAD: "
-		   "fastest %gus, slowest %gus, avg %gus\n",
-		   after.tv_sec, after.tv_usec, perfmgr_mad_stats.fastest_us,
-		   perfmgr_mad_stats.slowest_us, perfmgr_mad_stats.avg_us);
+		   "PerfMgr total sweep time %ld.%06lds",
+		   after.tv_sec, after.tv_usec);
 	clear_mad_stats();
 	if (sendto(pm->logstash_socket, buf, strlen(buf), 0, (struct sockaddr*)&logstash_serv_addr, logstash_slen)==-1)
         err("sendto()");
