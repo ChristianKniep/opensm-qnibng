@@ -89,8 +89,10 @@ struct {
 	double avg_us;
 	uint64_t num;
 } perfmgr_mad_stats;
+/*
 #= {
 #fastest_us: DBL_MAX, slowest_us: DBL_MIN, avg_us: 0, num:0};
+*/
 
 /* diff must be something which can fit in a susecond_t */
 static inline void update_mad_stats(struct timeval *diff)
