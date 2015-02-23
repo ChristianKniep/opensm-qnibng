@@ -66,7 +66,7 @@
  */
 #define SAMPLE_PLUGIN_OUTPUT_FILE "/tmp/osm_sample_event_plugin_output"
 /* define address and port of graphite aggregator / logstash */
-#define LOGSTASH_HOST "logstash.syslog.sercice.consul"
+#define LOGSTASH_HOST "logstash.syslog.service.consul"
 #define LOGSTASH_PORT 5514
 #define STATSD_HOST "statsd.service.consul"
 #define STATSD_PORT 8125
