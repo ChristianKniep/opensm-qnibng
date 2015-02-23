@@ -65,9 +65,11 @@
  * generates to this interface.
  */
 #define SAMPLE_PLUGIN_OUTPUT_FILE "/tmp/osm_sample_event_plugin_output"
-/* define address and port of graphite aggregator */
-#define SERVER "127.0.0.1"
-#define PORT 2003
+/* define address and port of graphite aggregator / logstash */
+#define LOGSTASH_HOST "logstash.syslog.sercice.consul"
+#define LOGSTASH_PORT 5514
+#define STATSD_HOST "statsd.service.consul"
+#define STATSD_PORT 8125
 #define BufferLength 512
 
 /* Initialize connection stuff */
@@ -122,8 +124,8 @@ static void *construct(osm_opensm_t *osm)
         err("socket");
 	bzero(&statsd_serv_addr, sizeof(statsd_serv_addr));
     statsd_serv_addr.sin_family = AF_INET;
-    statsd_serv_addr.sin_port = htons(8125);
-    if (inet_aton("127.0.0.1", &statsd_serv_addr.sin_addr)==0)
+    statsd_serv_addr.sin_port = htons(STATSD_PORT);
+    if (inet_aton(STATSD_HOST, &statsd_serv_addr.sin_addr)==0)
     {
         fprintf(stderr, "inet_aton() failed\n");
         exit(1);
@@ -133,8 +135,8 @@ static void *construct(osm_opensm_t *osm)
         err("socket");
 	bzero(&logstash_serv_addr, sizeof(logstash_serv_addr));
     logstash_serv_addr.sin_family = AF_INET;
-    logstash_serv_addr.sin_port = htons(5544);
-    if (inet_aton("127.0.0.1", &logstash_serv_addr.sin_addr)==0)
+    logstash_serv_addr.sin_port = htons(LOGSTASH_PORT);
+    if (inet_aton(LOGSTASH_HOST, &logstash_serv_addr.sin_addr)==0)
     {
         fprintf(stderr, "inet_aton() failed\n");
         exit(1);
